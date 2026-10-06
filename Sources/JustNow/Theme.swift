@@ -31,9 +31,11 @@ struct BrandMark: View {
     var body: some View {
         Image(nsImage: Self.image)
             .resizable()
+            .renderingMode(.template)
             .interpolation(.high)
+            .foregroundStyle(Theme.accent)
             .frame(width: size, height: size)
-            .scaleEffect(1.16) // Keep the tile at the original size despite the source canvas margin.
+            .scaleEffect(1.16) // Compensate for the source canvas margin.
             .accessibilityHidden(true)
     }
 }

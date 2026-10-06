@@ -1,0 +1,8 @@
+JustNow transparent outline icon — built-in image_gen, October 2026
+
+Edit target: Resources/AppIcon-source.png as released in 0.1.3.
+
+Use case: precise-object-edit.
+Edit target: the provided JustNow app icon. Redraw its document-and-clock mark as a precise, flat, modern monochrome outline icon.
+Required changes: REMOVE the entire purple rounded-square backing tile. REMOVE every ivory paper fill. REMOVE all shadows, bevels, highlights, texture and 3D effects. The canvas and every empty area INSIDE and OUTSIDE the paper and the clock must be genuinely transparent alpha. ONLY purple linework should remain.
+Keep the recognizable upright document silhouette with a neat upper-right folded corner, a centered circular clock with rounded hands pointing to twelve and four, and one short horizontal journal line below the clock. Draw a continuous purple outline around the document including its folded corner. Use balanced, consistent generous stroke weights, rounded line caps and soft rounded joins, in one solid violet #7866EB. Make the paper outline and the clock clean and perfectly crisp, like a carefully designed vector UI icon. No filled paper, no outer square, no rounded-square container, no white anywhere. Optical balance and clarity at 22–48 pixel app UI sizes matter. The complete document mark should occupy about 82 percent of the square canvas height and 66 percent of its width, centered with equal top/bottom padding. Outline width about 5 percent of canvas width; clock hands equally bold. Front view, no perspective. One final icon asset, no text, letters, numbers, labels, checkerboard or mockup.

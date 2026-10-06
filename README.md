@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Resources/AppIcon-preview.png" width="128" alt="JustNow 应用图标">
+  <img src="Resources/AppIcon-preview.png" width="128" alt="JustNow 图标：透明紫色轮廓的文档与时钟">
 </p>
 
 # JustNow · 刚才
@@ -35,7 +35,7 @@ JustNow 是一个原生 macOS 时间日志。手动开始后，每隔一段时�
 
 - **手动开始，手动停止。** 默认 30 分钟一次；可在设置中更改间隔。
 - **直接写刚才做了什么。** 每段记录包含起止时间与自由文字，支持多行。
-- **时间线与回顾。** 按日期查看、搜索、修改历史记录，也可以手动补记。
+- **时间线与回顾。** 今日最新片段在最上面；可以按日期查看、搜索、修改历史记录，也可以手动补记。
 - **漏填也能补。** 点「稍后」保留待填写时间段，不丢失它的位置。
 - **本地保存与导出。** JSON 日志自动保存，保留上一次成功保存的备份，支持 CSV / JSON 导出。
 - **随时从菜单栏操作。** 查看状态、打开日志、开始或结束记录。
@@ -88,7 +88,7 @@ JustNow **不读取屏幕、应用使用记录或浏览器历史，不包含遥�
 
 ```sh
 SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
-VERSION=0.1.3 ./scripts/build-app.sh
+VERSION=0.1.4 ./scripts/build-app.sh
 
 SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
 NOTARY_PROFILE='justnow-notary' ./scripts/notarize.sh
@@ -96,11 +96,11 @@ NOTARY_PROFILE='justnow-notary' ./scripts/notarize.sh
 
 先按照 [Apple 的公证流程](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow) 创建 Keychain profile。脚本会检查 Developer ID 签名、hardened runtime 与时间戳；提交 ZIP、等待通过后将票据附加到 app，再重新生成 ZIP / DMG，提交并附加 DMG 票据，最后验证与更新校验文件。ZIP 本身不能附加票据，分发的 ZIP 内包含已附加票据的 app。
 
-GitHub Actions 在 push / PR 时测试与构建；推送 `v0.1.3` 这类标签会创建一个带安装包的**草稿 Release**。CI 未配置签名凭据，附件会明确标为 ad-hoc / 未公证。正式发布前，用公证后的安装包替换草稿附件。没有证书时，仍可分享源码和清楚标注签名状态的构建。
+GitHub Actions 在 push / PR 时测试与构建；推送 `v0.1.4` 这类标签会创建一个带安装包的**草稿 Release**。CI 未配置签名凭据，附件会明确标为 ad-hoc / 未公证。正式发布前，用公证后的安装包替换草稿附件。没有证书时，仍可分享源码和清楚标注签名状态的构建。
 
 ## 参与开发
 
-详见 [CONTRIBUTING.md](CONTRIBUTING.md)。图标的 PNG 源图保存在 `Resources/AppIcon-source.png`；`scripts/generate-icon.swift` 使用原生 AppKit 缩放生成各尺寸 iconset，再通过系统 `iconutil` 打包为 ICNS，同时生成预览图。运行以下命令可从仓库中的源图重现图标资源，无需下载素材或安装第三方包：
+详见 [CONTRIBUTING.md](CONTRIBUTING.md)。现用图标是透明紫色轮廓的文档与时钟，PNG 源图保存在 `Resources/AppIcon-source.png`，编辑提示词保存在 `Resources/AppIcon-outline-prompt.txt`；`Resources/AppIcon-prompt.txt` 保留为设计历史。`scripts/generate-icon.swift` 使用原生 AppKit 缩放生成各尺寸 iconset，再通过系统 `iconutil` 打包为 ICNS，同时生成预览图。运行以下命令可从仓库中的源图重现图标资源，无需下载素材或安装第三方包：
 
 ```sh
 swift scripts/generate-icon.swift Resources
@@ -118,7 +118,7 @@ JustNow is a native, local-first activity journal for macOS 14+. Start a session
 
 - Adjustable intervals; saving an entry does not reset the timer.
 - Custom date and time popovers; appearance and language options displayed directly in Settings.
-- Daily timeline, search, editing, manual backfill, and pending entries when you choose Later.
+- Today shows the newest entries at the top. Browse daily history, search, edit, backfill, and return to pending entries when you choose Later.
 - Stop captures the final partial interval. Sleep pauses tracking; waking resumes only an active session. Relaunch always requires a manual start.
 - Local JSON journal with previous-save backup, plus CSV / JSON export.
 - No account, telemetry, network requests, screen monitoring, or browsing history access.

@@ -96,7 +96,7 @@ final class AppModel: ObservableObject {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return entries.filter {
             $0.start < dayEnd && $0.end > dayStart && (query.isEmpty || $0.text.localizedCaseInsensitiveContains(query))
-        }.sorted { $0.start < $1.start }
+        }.sorted { selectedSection == .today ? $0.start > $1.start : $0.start < $1.start }
     }
     var recordedDuration: TimeInterval {
         let start = Calendar.current.startOfDay(for: selectedDay)
