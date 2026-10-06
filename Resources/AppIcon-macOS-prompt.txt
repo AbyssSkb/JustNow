@@ -1,0 +1,7 @@
+JustNow macOS application icon — built-in image_gen, October 2026
+
+Edit target: Resources/AppIcon-source.png as released in 0.1.4.
+
+Use case: precise-object-edit.
+Edit target: the provided JustNow transparent purple outline icon. Make a macOS application icon variant by adding a clean WHITE rounded-square backing tile, while retaining the same purple outlined document, folded upper-right corner, circular clock with hands pointing to twelve and four, and one journal line below.
+Preserve the identity and geometry of the existing purple mark. Do not redesign it, add details, add text, or change it to a filled illustration. Scale the complete existing mark uniformly to occupy about 63 percent of the square canvas height, centered optically inside the backing tile. The white tile should occupy about 86 percent of the canvas width and height, with balanced soft rounded corners suitable for a macOS Dock icon. The tile is pure white #FFFFFF, flat, opaque, no gradient, no texture, no colored background, no heavy shadows or bevels. All the previously empty regions of the document and clock show the white tile behind them. Keep the purple linework clear, consistent and crisp. OUTSIDE the white rounded tile, including the canvas corners, retain genuinely transparent alpha. One single final icon, front view, no mockup, no text, no lettering, no checkerboard.

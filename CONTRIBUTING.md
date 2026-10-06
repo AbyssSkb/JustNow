@@ -25,7 +25,9 @@ open dist/JustNow.app
 
 ## 图标与发布
 
-现用图标是透明紫色轮廓的文档与时钟。源图是 `Resources/AppIcon-source.png`，编辑提示词保存在 `Resources/AppIcon-outline-prompt.txt`，旧提示词 `Resources/AppIcon-prompt.txt` 保留为设计历史。脚本使用原生 AppKit 缩放，生成 ICNS、预览图和界面品牌资源：
+macOS Dock 和 Finder 图标使用白色圆角底板上的紫色文档与时钟轮廓，源图是 `Resources/AppIcon-macOS-source.png`，编辑提示词是 `Resources/AppIcon-macOS-prompt.txt`。
+
+应用内透明标识使用 `Resources/AppIcon-source.png`，对应 `Resources/AppIcon-outline-prompt.txt`；旧提示词 `Resources/AppIcon-prompt.txt` 保留为设计历史。脚本使用原生 AppKit 从两张 PNG 缩放生成 ICNS、macOS 图标预览和透明界面品牌资源：
 
 ```sh
 swift scripts/generate-icon.swift Resources
