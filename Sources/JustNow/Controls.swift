@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import JustNowCore
 
 struct JournalTextEditor: View {
     @Binding var text: String
@@ -25,9 +26,7 @@ private struct NativeJournalEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
         scroll.drawsBackground = false
-        scroll.hasVerticalScroller = true
-        scroll.autohidesScrollers = true
-        scroll.scrollerStyle = .overlay
+        scroll.hasVerticalScroller = false
         let editor = JournalNSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 180))
         editor.isEditable = true
         editor.isSelectable = true
@@ -37,6 +36,8 @@ private struct NativeJournalEditor: NSViewRepresentable {
         editor.font = .systemFont(ofSize: 13)
         editor.textColor = NSColor(Theme.ink)
         editor.insertionPointColor = NSColor(Theme.accent)
+        editor.selectedTextAttributes = [.backgroundColor: NSColor(Theme.accent.opacity(0.22)),
+                                         .foregroundColor: NSColor(Theme.ink)]
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 5
         editor.defaultParagraphStyle = paragraph
@@ -148,8 +149,7 @@ struct JournalDateField: View {
         .accessibilityLabel(label)
         .accessibilityValue(date.formatted(.dateTime.year().month(.wide).day().locale(locale)))
         .popover(isPresented: $showingCalendar, arrowEdge: .bottom) {
-            NativeJournalDatePicker(date: $date, calendar: true, label: label, locale: locale, focused: .constant(false))
-                .frame(width: 260, height: 210).padding(12)
+            JournalCalendar(date: $date, locale: locale) { showingCalendar = false }
         }
     }
 }
@@ -157,71 +157,309 @@ struct JournalDateField: View {
 struct JournalTimeField: View {
     @Binding var date: Date
     let label: String
-    @State private var focused = false
+    var locale: Locale = .current
+    @State private var showingTime = false
+    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "clock").font(.system(size: 12)).foregroundStyle(Theme.secondary)
-            NativeJournalDatePicker(date: $date, calendar: false, label: label, locale: Locale(identifier: "en_GB"), focused: $focused)
-                .frame(width: 56, height: 20)
+        Button { showingTime.toggle() } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "clock").foregroundStyle(Theme.secondary)
+                Text(date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).locale(Locale(identifier: "en_GB"))))
+                    .monospacedDigit()
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.secondary)
+            }
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 12).frame(height: 36)
+            .background(hovering ? Theme.inset : Theme.card, in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(showingTime ? Theme.accent.opacity(0.65) : Theme.line))
+            .contentShape(RoundedRectangle(cornerRadius: 9))
         }
-        .padding(.horizontal, 12).frame(height: 36)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 9))
-        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(focused ? Theme.accent.opacity(0.65) : Theme.line))
+        .buttonStyle(.plain).onHover { hovering = $0 }
+        .accessibilityLabel(label)
+        .accessibilityValue(date.formatted(.dateTime.hour().minute().locale(locale)))
+        .popover(isPresented: $showingTime, arrowEdge: .bottom) {
+            JournalTimeChooser(date: $date, locale: locale) { showingTime = false }
+        }
     }
 }
 
-private struct NativeJournalDatePicker: NSViewRepresentable {
+private struct JournalCalendar: View {
     @Binding var date: Date
-    let calendar: Bool
-    let label: String
     let locale: Locale
-    @Binding var focused: Bool
+    let close: () -> Void
+    @State private var month: Date
+    @State private var page = Page.days
+    @State private var yearPage: Int
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    private enum Page { case days, months, years }
+    private let calendar = Calendar(identifier: .gregorian)
+    private var chinese: Bool { locale.identifier.hasPrefix("zh") }
+    private var year: Int { calendar.component(.year, from: month) }
+    private var monthNumber: Int { calendar.component(.month, from: month) }
 
-    func makeNSView(context: Context) -> JournalNSDatePicker {
-        let picker = JournalNSDatePicker()
-        picker.datePickerStyle = calendar ? .clockAndCalendar : .textField
-        picker.datePickerElements = calendar ? .yearMonthDay : .hourMinute
-        picker.isBezeled = false
-        picker.isBordered = false
-        picker.drawsBackground = false
-        picker.focusRingType = .none
-        picker.isContinuous = true
-        picker.font = calendar ? .systemFont(ofSize: 13) : .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
-        picker.textColor = NSColor(Theme.ink)
-        picker.dateValue = date
-        picker.target = context.coordinator
-        picker.action = #selector(Coordinator.changed(_:))
-        picker.onFocusChanged = { context.coordinator.parent.focused = $0 }
-        return picker
+    init(date: Binding<Date>, locale: Locale, close: @escaping () -> Void) {
+        _date = date
+        self.locale = locale
+        self.close = close
+        let calendar = Calendar(identifier: .gregorian)
+        _month = State(initialValue: calendar.dateInterval(of: .month, for: date.wrappedValue)!.start)
+        let year = calendar.component(.year, from: date.wrappedValue)
+        _yearPage = State(initialValue: year - (year % 12))
     }
 
-    func updateNSView(_ picker: JournalNSDatePicker, context: Context) {
-        context.coordinator.parent = self
-        if picker.locale != locale { picker.locale = locale }
-        picker.setAccessibilityLabel(label)
-        if picker.dateValue != date { picker.dateValue = date }
+    var body: some View {
+        VStack(spacing: 16) {
+            header
+            switch page {
+            case .days: dayGrid
+            case .months: monthGrid
+            case .years: yearGrid
+            }
+            HStack(spacing: 8) {
+                Button { select(Date()) } label: { Text(chinese ? "今天" : "Today").calendarChoiceLabel() }
+                    .buttonStyle(CalendarChoiceStyle())
+                    .disabled(CalendarSelection.replacingDay(of: date, with: Date(), calendar: calendar) == nil)
+                Button(action: close) { Text(chinese ? "关闭" : "Close").calendarChoiceLabel() }
+                    .buttonStyle(CalendarChoiceStyle())
+            }
+        }
+        .padding(20).frame(width: 316)
+        .background(Theme.card)
+        .foregroundStyle(Theme.ink)
+        .onExitCommand(perform: close)
     }
 
-    final class Coordinator: NSObject {
-        var parent: NativeJournalDatePicker
-        init(_ parent: NativeJournalDatePicker) { self.parent = parent }
-        @objc func changed(_ picker: NSDatePicker) { parent.date = picker.dateValue }
+    private var header: some View {
+        HStack(spacing: 4) {
+            if page == .years {
+                Text(verbatim: "\(yearPage) – \(yearPage + 11)").font(.system(size: 14, weight: .semibold)).monospacedDigit()
+                Spacer(minLength: 4)
+            } else {
+                Button {
+                    yearPage = year - (year % 12)
+                    page = page == .years ? .days : .years
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(chinese ? "\(year)年" : String(year))
+                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                    }
+                    .calendarChoiceLabel()
+                }
+                .buttonStyle(CalendarChoiceStyle(selected: page == .years))
+                Button { page = page == .months ? .days : .months } label: {
+                    HStack(spacing: 5) {
+                        Text(month.formatted(.dateTime.month(.wide).locale(locale)))
+                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                    }
+                    .calendarChoiceLabel()
+                }
+                .buttonStyle(CalendarChoiceStyle(selected: page == .months))
+                Spacer(minLength: 0)
+            }
+            Button { move(-1) } label: { Image(systemName: "chevron.left").frame(width: 36, height: 36).contentShape(RoundedRectangle(cornerRadius: 8)) }
+                .buttonStyle(CalendarChoiceStyle())
+                .accessibilityLabel(chinese ? "上一页" : "Previous page")
+            Button { move(1) } label: { Image(systemName: "chevron.right").frame(width: 36, height: 36).contentShape(RoundedRectangle(cornerRadius: 8)) }
+                .buttonStyle(CalendarChoiceStyle())
+                .accessibilityLabel(chinese ? "下一页" : "Next page")
+        }
+    }
+
+    private var dayGrid: some View {
+        let firstWeekday = (calendar.component(.weekday, from: month) + 5) % 7
+        let count = calendar.range(of: .day, in: .month, for: month)!.count
+        let rows = (firstWeekday + count + 6) / 7
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        let weekdays = formatter.shortStandaloneWeekdaySymbols!
+        return VStack(spacing: 8) {
+            HStack(spacing: 4) {
+                ForEach(0..<7) { column in
+                    Text(weekdays[(column + 1) % 7])
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.secondary).frame(maxWidth: .infinity)
+                }
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
+                ForEach(0..<(rows * 7), id: \.self) { index in
+                    let number = index - firstWeekday + 1
+                    if (1...count).contains(number) {
+                        let day = calendar.date(byAdding: .day, value: number - 1, to: month)!
+                        let selected = calendar.isDate(day, inSameDayAs: date)
+                        let available = CalendarSelection.replacingDay(of: date, with: day, calendar: calendar) != nil
+                        Button { select(day) } label: { Text(String(number)).monospacedDigit().calendarChoiceLabel() }
+                            .buttonStyle(CalendarChoiceStyle(selected: selected, today: calendar.isDateInToday(day)))
+                            .disabled(!available)
+                            .accessibilityLabel(day.formatted(.dateTime.year().month(.wide).day().weekday(.wide).locale(locale)))
+                            .accessibilityAddTraits(selected ? .isSelected : [])
+                            .help(available ? (chinese ? "保留当前时间，选择这个日期" : "Choose this date and keep the current time") : (chinese ? "夏令时切换导致当天的这个时刻不存在。" : "The current time does not exist on this date because of daylight saving."))
+                    } else {
+                        Color.clear.frame(height: 36).accessibilityHidden(true)
+                    }
+                }
+            }
+        }
+    }
+
+    private var monthGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+            ForEach(1...12, id: \.self) { number in
+                let value = calendar.date(from: DateComponents(year: year, month: number, day: 1))!
+                Button { month = value; page = .days } label: {
+                    Text(value.formatted(.dateTime.month(.abbreviated).locale(locale))).calendarChoiceLabel(height: 40)
+                }
+                .buttonStyle(CalendarChoiceStyle(selected: number == monthNumber))
+                .accessibilityAddTraits(number == monthNumber ? .isSelected : [])
+            }
+        }
+    }
+
+    private var yearGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+            ForEach(yearPage..<(yearPage + 12), id: \.self) { value in
+                Button {
+                    month = calendar.date(from: DateComponents(year: value, month: monthNumber, day: 1))!
+                    page = .months
+                } label: { Text(String(value)).monospacedDigit().calendarChoiceLabel(height: 40) }
+                .buttonStyle(CalendarChoiceStyle(selected: value == year))
+                .accessibilityAddTraits(value == year ? .isSelected : [])
+            }
+        }
+    }
+
+    private func move(_ step: Int) {
+        switch page {
+        case .years: yearPage = max(1, yearPage + step * 12)
+        case .months: month = calendar.date(byAdding: .year, value: step, to: month)!
+        case .days: month = calendar.date(byAdding: .month, value: step, to: month)!
+        }
+    }
+
+    private func select(_ day: Date) {
+        guard let selected = CalendarSelection.replacingDay(of: date, with: day, calendar: calendar) else { return }
+        date = selected
+        close()
     }
 }
 
-private final class JournalNSDatePicker: NSDatePicker {
-    var onFocusChanged: ((Bool) -> Void)?
-    override func becomeFirstResponder() -> Bool {
-        let accepted = super.becomeFirstResponder()
-        if accepted { onFocusChanged?(true) }
-        return accepted
+private struct JournalTimeChooser: View {
+    @Binding var date: Date
+    let locale: Locale
+    let close: () -> Void
+    @State private var hour: Int
+    @State private var minute: Int
+    @State private var minuteGroup: Int
+    private let calendar = Calendar(identifier: .gregorian)
+    private var chinese: Bool { locale.identifier.hasPrefix("zh") }
+    private var selectedDate: Date? { CalendarSelection.replacingTime(of: date, hour: hour, minute: minute, calendar: calendar) }
+
+    init(date: Binding<Date>, locale: Locale, close: @escaping () -> Void) {
+        _date = date
+        self.locale = locale
+        self.close = close
+        let calendar = Calendar(identifier: .gregorian)
+        _hour = State(initialValue: calendar.component(.hour, from: date.wrappedValue))
+        let minute = calendar.component(.minute, from: date.wrappedValue)
+        _minute = State(initialValue: minute)
+        _minuteGroup = State(initialValue: minute / 10)
     }
-    override func resignFirstResponder() -> Bool {
-        let accepted = super.resignFirstResponder()
-        if accepted { onFocusChanged?(false) }
-        return accepted
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(chinese ? "选择时间" : "Choose time").font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Text(String(format: "%02d:%02d", hour, minute))
+                    .font(.system(size: 22, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(Theme.accent)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text(chinese ? "小时 · 24 小时制" : "Hour · 24-hour clock")
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 6), spacing: 4) {
+                    ForEach(0..<24) { value in
+                        Button { hour = value } label: { Text(String(format: "%02d", value)).monospacedDigit().calendarChoiceLabel() }
+                            .buttonStyle(CalendarChoiceStyle(selected: hour == value))
+                            .accessibilityLabel(chinese ? "\(value)时" : "Hour \(value)")
+                            .accessibilityAddTraits(hour == value ? .isSelected : [])
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text(chinese ? "分钟" : "Minute").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                HStack(spacing: 4) {
+                    ForEach(0..<6) { group in
+                        Button { minuteGroup = group } label: { Text(String(format: "%02d–%02d", group * 10, group * 10 + 9)).font(.system(size: 10, weight: .medium)).monospacedDigit().calendarChoiceLabel() }
+                            .buttonStyle(CalendarChoiceStyle(selected: minuteGroup == group))
+                            .accessibilityLabel(chinese ? "\(group * 10)至\(group * 10 + 9)分" : "Minutes \(group * 10) to \(group * 10 + 9)")
+                            .accessibilityAddTraits(minuteGroup == group ? .isSelected : [])
+                    }
+                }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 5), spacing: 4) {
+                    ForEach((minuteGroup * 10)..<(minuteGroup * 10 + 10), id: \.self) { value in
+                        Button { minute = value } label: { Text(String(format: "%02d", value)).monospacedDigit().calendarChoiceLabel() }
+                            .buttonStyle(CalendarChoiceStyle(selected: minute == value))
+                            .disabled(CalendarSelection.replacingTime(of: date, hour: hour, minute: value, calendar: calendar) == nil)
+                            .accessibilityLabel(chinese ? "\(value)分" : "Minute \(value)")
+                            .accessibilityAddTraits(minute == value ? .isSelected : [])
+                    }
+                }
+            }
+            if selectedDate == nil {
+                Text(chinese ? "夏令时切换导致这个时间不存在，请选择其他时间。" : "This time does not exist because of daylight saving. Choose another time.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.amber).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 8) {
+                Button(action: close) { Text(chinese ? "取消" : "Cancel").calendarChoiceLabel() }
+                    .buttonStyle(CalendarChoiceStyle())
+                Button {
+                    if let selectedDate { date = selectedDate; close() }
+                } label: { Text(chinese ? "确定" : "Done").calendarChoiceLabel() }
+                .buttonStyle(CalendarChoiceStyle(selected: true))
+                .disabled(selectedDate == nil)
+                .keyboardShortcut(.return, modifiers: [])
+            }
+        }
+        .padding(20).frame(width: 316)
+        .background(Theme.card).foregroundStyle(Theme.ink)
+        .onExitCommand(perform: close)
+    }
+}
+
+private struct CalendarChoiceStyle: ButtonStyle {
+    var selected = false
+    var today = false
+    func makeBody(configuration: Configuration) -> some View {
+        CalendarChoiceSurface(configuration: configuration, selected: selected, today: today)
+    }
+}
+
+private struct CalendarChoiceSurface: View {
+    let configuration: ButtonStyleConfiguration
+    let selected: Bool
+    let today: Bool
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.isFocused) private var focused
+    @State private var hovering = false
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        configuration.label
+            .font(.system(size: 12, weight: selected || today ? .semibold : .medium))
+            .lineLimit(1).minimumScaleFactor(0.85)
+            .foregroundStyle(selected || today ? Theme.accent : Theme.ink)
+            .background(selected ? Theme.accent.opacity(0.14) : hovering ? Theme.inset : .clear, in: shape)
+            .overlay(shape.strokeBorder(focused ? Theme.accent.opacity(0.6) : today ? Theme.accent.opacity(0.25) : .clear))
+            .opacity(enabled ? configuration.isPressed ? 0.65 : 1 : 0.3)
+            .contentShape(shape)
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+private extension View {
+    func calendarChoiceLabel(height: CGFloat = 36) -> some View {
+        frame(maxWidth: .infinity).frame(height: height)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }

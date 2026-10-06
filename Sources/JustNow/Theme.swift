@@ -75,10 +75,6 @@ private struct ButtonSurface: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: compact ? 9 : 11, style: .continuous)
         configuration.label
-            .font(.system(size: compact ? 12 : 13, weight: .semibold))
-            .lineLimit(1)
-            .padding(.horizontal, iconOnly ? 0 : compact ? 12 : 18)
-            .frame(width: iconOnly ? (compact ? 36 : 40) : nil, height: compact ? 36 : 40)
             .foregroundStyle(primary ? Color.white : iconOnly ? Theme.secondary : Theme.ink)
             .background(primary ? Theme.accent : hovering && isEnabled ? Theme.line : Theme.inset, in: shape)
             .overlay(shape.strokeBorder(primary ? .clear : Theme.line, lineWidth: 1))
@@ -90,7 +86,35 @@ private struct ButtonSurface: View {
     }
 }
 
+struct JournalToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            ZStack(alignment: configuration.isOn ? .trailing : .leading) {
+                Capsule().fill(configuration.isOn ? Theme.accent : Theme.secondary.opacity(0.25))
+                Circle().fill(.white).frame(width: 20, height: 20).padding(3)
+                    .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+            }
+            .frame(width: 44, height: 26)
+            .frame(width: 56, height: 36)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .animation(.easeOut(duration: 0.15), value: configuration.isOn)
+        .accessibilityRepresentation {
+            Toggle(isOn: configuration.$isOn) { configuration.label }.toggleStyle(.switch)
+        }
+    }
+}
+
 extension View {
+    func actionLabel(compact: Bool = false, iconOnly: Bool = false) -> some View {
+        self.font(.system(size: compact ? 12 : 13, weight: .semibold))
+            .lineLimit(1)
+            .padding(.horizontal, iconOnly ? 0 : compact ? 12 : 18)
+            .frame(width: iconOnly ? (compact ? 36 : 40) : nil, height: compact ? 36 : 40)
+            .contentShape(RoundedRectangle(cornerRadius: compact ? 9 : 11, style: .continuous))
+    }
+
     func journalCard(padding: CGFloat = 24) -> some View {
         self.padding(padding)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 19, style: .continuous))

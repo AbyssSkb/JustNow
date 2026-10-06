@@ -13,11 +13,13 @@ JustNow 是一个原生 macOS 时间日志。手动开始后，每隔一段时�
 ![JustNow 主界面](Resources/screenshots/overview.png)
 
 <details>
-<summary>查看提醒与编辑窗口、深色外观与首次使用引导</summary>
+<summary>查看提醒与编辑窗口、设置、深色外观与首次使用引导</summary>
 
 ![JustNow 提醒窗口](Resources/screenshots/reminder.png)
 
 ![JustNow 记录编辑窗口](Resources/screenshots/editor.png)
+
+![JustNow 设置：外观和语言选项并排展示](Resources/screenshots/settings.png)
 
 ![JustNow 深色外观](Resources/screenshots/dark.png)
 
@@ -37,6 +39,7 @@ JustNow 是一个原生 macOS 时间日志。手动开始后，每隔一段时�
 - **漏填也能补。** 点「稍后」保留待填写时间段，不丢失它的位置。
 - **本地保存与导出。** JSON 日志自动保存，保留上一次成功保存的备份，支持 CSV / JSON 导出。
 - **随时从菜单栏操作。** 查看状态、打开日志、开始或结束记录。
+- **清楚的选择控件。** 日期与时间使用专用弹层；外观和中英文语言选项在设置中并排展示。
 
 ## 安装
 
@@ -85,7 +88,7 @@ JustNow **不读取屏幕、应用使用记录或浏览器历史，不包含遥�
 
 ```sh
 SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
-VERSION=0.1.1 ./scripts/build-app.sh
+VERSION=0.1.2 ./scripts/build-app.sh
 
 SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
 NOTARY_PROFILE='justnow-notary' ./scripts/notarize.sh
@@ -93,7 +96,7 @@ NOTARY_PROFILE='justnow-notary' ./scripts/notarize.sh
 
 先按照 [Apple 的公证流程](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow) 创建 Keychain profile。脚本会检查 Developer ID 签名、hardened runtime 与时间戳；提交 ZIP、等待通过后将票据附加到 app，再重新生成 ZIP / DMG，提交并附加 DMG 票据，最后验证与更新校验文件。ZIP 本身不能附加票据，分发的 ZIP 内包含已附加票据的 app。
 
-GitHub Actions 在 push / PR 时测试与构建；推送 `v0.1.1` 这类标签会创建一个带安装包的**草稿 Release**。CI 未配置签名凭据，附件会明确标为 ad-hoc / 未公证。正式发布前，用公证后的安装包替换草稿附件。没有证书时，仍可分享源码和清楚标注签名状态的构建。
+GitHub Actions 在 push / PR 时测试与构建；推送 `v0.1.2` 这类标签会创建一个带安装包的**草稿 Release**。CI 未配置签名凭据，附件会明确标为 ad-hoc / 未公证。正式发布前，用公证后的安装包替换草稿附件。没有证书时，仍可分享源码和清楚标注签名状态的构建。
 
 ## 参与开发
 
@@ -108,6 +111,7 @@ GitHub Actions 在 push / PR 时测试与构建；推送 `v0.1.1` 这类标签�
 JustNow is a native, local-first activity journal for macOS 14+. Start a session manually, receive a prompt every 30 minutes by default, and describe the previous interval in your own words. No projects or tasks to set up. Apple Silicon and Intel are supported by the same universal build.
 
 - Adjustable intervals; saving an entry does not reset the timer.
+- Custom date and time popovers; appearance and language options displayed directly in Settings.
 - Daily timeline, search, editing, manual backfill, and pending entries when you choose Later.
 - Stop captures the final partial interval. Sleep pauses tracking; waking resumes only an active session. Relaunch always requires a manual start.
 - Local JSON journal with previous-save backup, plus CSV / JSON export.
