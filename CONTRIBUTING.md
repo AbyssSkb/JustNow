@@ -25,7 +25,7 @@ open dist/JustNow.app
 
 ## 图标与发布
 
-图标源文件是 `scripts/generate-icon.swift`，用原生 AppKit 绘制：
+图标源图是 `Resources/AppIcon-source.png`，生成提示词保存在 `Resources/AppIcon-prompt.txt`。脚本使用原生 AppKit 缩放，生成 ICNS、预览图和界面品牌资源：
 
 ```sh
 swift scripts/generate-icon.swift Resources

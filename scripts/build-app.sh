@@ -2,13 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.1.2}"
+VERSION="${VERSION:-0.1.3}"
 DIST="$ROOT/dist"
 APP="$DIST/JustNow.app"
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  printf 'VERSION must be a numeric semantic version, such as 0.1.2.\n' >&2
+  printf 'VERSION must be a numeric semantic version, such as 0.1.3.\n' >&2
   exit 1
 fi
 if [[ -n "${SIGNING_IDENTITY:-}" && "$SIGNING_IDENTITY" != "Developer ID Application:"* ]]; then
@@ -26,6 +26,9 @@ for ARCH in arm64 x86_64; do
   swift build "${BUILD_ARGS[@]}"
   BIN_PATH="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
   cp "$BIN_PATH/JustNow" "$STAGE/JustNow-$ARCH"
+  if [[ "$ARCH" == "arm64" ]]; then
+    cp "$BIN_PATH/JustNow_JustNow.bundle/BrandMark.png" "$STAGE/BrandMark.png"
+  fi
 done
 
 CONTENTS="$STAGE/JustNow.app/Contents"
@@ -33,6 +36,7 @@ mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 lipo -create "$STAGE/JustNow-arm64" "$STAGE/JustNow-x86_64" -output "$CONTENTS/MacOS/JustNow"
 lipo "$CONTENTS/MacOS/JustNow" -verify_arch arm64 x86_64
 cp "$ROOT/Resources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
+cp "$STAGE/BrandMark.png" "$CONTENTS/Resources/BrandMark.png"
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

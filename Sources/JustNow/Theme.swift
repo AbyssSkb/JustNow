@@ -24,28 +24,17 @@ enum Theme {
 
 struct BrandMark: View {
     var size: CGFloat = 38
+    private static let image = NSImage(contentsOf:
+        (Bundle.main.url(forResource: "BrandMark", withExtension: "png")
+         ?? Bundle.module.url(forResource: "BrandMark", withExtension: "png"))!)!
+
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                .fill(Theme.accent.gradient)
-            Path { path in
-                let left = size * 0.23, top = size * 0.21
-                let width = size * 0.54, height = size * 0.51
-                path.addRoundedRect(in: CGRect(x: left, y: top, width: width, height: height), cornerSize: CGSize(width: size * 0.13, height: size * 0.13))
-                path.move(to: CGPoint(x: size * 0.40, y: size * 0.72))
-                path.addLine(to: CGPoint(x: size * 0.32, y: size * 0.80))
-                path.addLine(to: CGPoint(x: size * 0.32, y: size * 0.69))
-            }
-            .stroke(.white.opacity(0.95), style: StrokeStyle(lineWidth: size * 0.045, lineCap: .round, lineJoin: .round))
-            Path { path in
-                path.move(to: CGPoint(x: size * 0.51, y: size * 0.32))
-                path.addLine(to: CGPoint(x: size * 0.51, y: size * 0.47))
-                path.addLine(to: CGPoint(x: size * 0.62, y: size * 0.52))
-            }
-            .stroke(.white, style: StrokeStyle(lineWidth: size * 0.05, lineCap: .round, lineJoin: .round))
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
+        Image(nsImage: Self.image)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: size, height: size)
+            .scaleEffect(1.16) // Keep the tile at the original size despite the source canvas margin.
+            .accessibilityHidden(true)
     }
 }
 

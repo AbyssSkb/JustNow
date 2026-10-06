@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Resources/AppIcon-preview.png" width="128" alt="JustNow 图标：紫色对话气泡中的时钟">
+  <img src="Resources/AppIcon-preview.png" width="128" alt="JustNow 应用图标">
 </p>
 
 # JustNow · 刚才
@@ -88,7 +88,7 @@ JustNow **不读取屏幕、应用使用记录或浏览器历史，不包含遥�
 
 ```sh
 SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
-VERSION=0.1.2 ./scripts/build-app.sh
+VERSION=0.1.3 ./scripts/build-app.sh
 
 SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
 NOTARY_PROFILE='justnow-notary' ./scripts/notarize.sh
@@ -96,11 +96,17 @@ NOTARY_PROFILE='justnow-notary' ./scripts/notarize.sh
 
 先按照 [Apple 的公证流程](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow) 创建 Keychain profile。脚本会检查 Developer ID 签名、hardened runtime 与时间戳；提交 ZIP、等待通过后将票据附加到 app，再重新生成 ZIP / DMG，提交并附加 DMG 票据，最后验证与更新校验文件。ZIP 本身不能附加票据，分发的 ZIP 内包含已附加票据的 app。
 
-GitHub Actions 在 push / PR 时测试与构建；推送 `v0.1.2` 这类标签会创建一个带安装包的**草稿 Release**。CI 未配置签名凭据，附件会明确标为 ad-hoc / 未公证。正式发布前，用公证后的安装包替换草稿附件。没有证书时，仍可分享源码和清楚标注签名状态的构建。
+GitHub Actions 在 push / PR 时测试与构建；推送 `v0.1.3` 这类标签会创建一个带安装包的**草稿 Release**。CI 未配置签名凭据，附件会明确标为 ad-hoc / 未公证。正式发布前，用公证后的安装包替换草稿附件。没有证书时，仍可分享源码和清楚标注签名状态的构建。
 
 ## 参与开发
 
-详见 [CONTRIBUTING.md](CONTRIBUTING.md)。图标由原生 AppKit 绘制，源文件保存在 `scripts/generate-icon.swift`。许可采用 [MIT](LICENSE)。
+详见 [CONTRIBUTING.md](CONTRIBUTING.md)。图标的 PNG 源图保存在 `Resources/AppIcon-source.png`；`scripts/generate-icon.swift` 使用原生 AppKit 缩放生成各尺寸 iconset，再通过系统 `iconutil` 打包为 ICNS，同时生成预览图。运行以下命令可从仓库中的源图重现图标资源，无需下载素材或安装第三方包：
+
+```sh
+swift scripts/generate-icon.swift Resources
+```
+
+许可采用 [MIT](LICENSE)。
 
 ---
 
