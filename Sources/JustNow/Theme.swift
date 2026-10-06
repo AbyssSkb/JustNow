@@ -8,7 +8,7 @@ enum Theme {
     static let card = adaptive(light: 0xFFFFFF, dark: 0x252529)
     static let inset = adaptive(light: 0xF6F5F3, dark: 0x1D1D21)
     static let ink = adaptive(light: 0x28262E, dark: 0xF1F0F4)
-    static let secondary = adaptive(light: 0x797681, dark: 0xACA9B6)
+    static let secondary = adaptive(light: 0x6D6A75, dark: 0xB6B3C0)
     static let line = adaptive(light: 0xE9E7ED, dark: 0x35353C)
     static let amber = adaptive(light: 0xA36B22, dark: 0xEBC383)
 
@@ -52,26 +52,41 @@ struct BrandMark: View {
 struct ActionButtonStyle: ButtonStyle {
     var primary = true
     var compact = false
-    @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: compact ? 12 : 13, weight: .semibold))
-            .padding(.horizontal, compact ? 12 : 18)
-            .padding(.vertical, compact ? 8 : 12)
-            .foregroundStyle(primary ? Color.white : Theme.ink)
-            .background(primary ? Theme.accent : Theme.inset, in: RoundedRectangle(cornerRadius: compact ? 9 : 11))
-            .overlay(RoundedRectangle(cornerRadius: compact ? 9 : 11).stroke(primary ? .clear : Theme.line, lineWidth: 1))
-            .opacity(!isEnabled ? 0.4 : configuration.isPressed ? 0.75 : 1)
+        ButtonSurface(configuration: configuration, primary: primary, compact: compact)
     }
 }
 
 struct IconButtonStyle: ButtonStyle {
+    var compact = true
     func makeBody(configuration: Configuration) -> some View {
+        ButtonSurface(configuration: configuration, primary: false, compact: compact, iconOnly: true)
+    }
+}
+
+private struct ButtonSurface: View {
+    let configuration: ButtonStyleConfiguration
+    let primary: Bool
+    let compact: Bool
+    var iconOnly = false
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: compact ? 9 : 11, style: .continuous)
         configuration.label
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(Theme.secondary)
-            .frame(width: 30, height: 30)
-            .background(configuration.isPressed ? Theme.line : Theme.inset, in: RoundedRectangle(cornerRadius: 8))
+            .font(.system(size: compact ? 12 : 13, weight: .semibold))
+            .lineLimit(1)
+            .padding(.horizontal, iconOnly ? 0 : compact ? 12 : 18)
+            .frame(width: iconOnly ? (compact ? 36 : 40) : nil, height: compact ? 36 : 40)
+            .foregroundStyle(primary ? Color.white : iconOnly ? Theme.secondary : Theme.ink)
+            .background(primary ? Theme.accent : hovering && isEnabled ? Theme.line : Theme.inset, in: shape)
+            .overlay(shape.strokeBorder(primary ? .clear : Theme.line, lineWidth: 1))
+            .brightness(primary && hovering && isEnabled ? 0.035 : 0)
+            .opacity(!isEnabled ? 0.4 : configuration.isPressed ? 0.72 : 1)
+            .contentShape(shape)
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 
@@ -79,6 +94,6 @@ extension View {
     func journalCard(padding: CGFloat = 24) -> some View {
         self.padding(padding)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 19, style: .continuous).stroke(Theme.line.opacity(0.85), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 19, style: .continuous).strokeBorder(Theme.line.opacity(0.85), lineWidth: 1))
     }
 }

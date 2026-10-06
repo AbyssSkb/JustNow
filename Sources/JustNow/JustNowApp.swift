@@ -1,11 +1,46 @@
 import AppKit
 import Combine
+import Darwin
 import SwiftUI
 
 @main
 enum JustNowApp {
     @MainActor
     static func main() {
+        var lockFileDescriptor: Int32 = -1
+        if !ProcessInfo.processInfo.arguments.contains("--demo") {
+            do {
+                let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent("JustNow", isDirectory: true)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let descriptor = Darwin.open(directory.appendingPathComponent(".instance-lock").path,
+                                             O_CREAT | O_RDWR | O_CLOEXEC, mode_t(0o600))
+                guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+                if flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+                    let failure = errno
+                    Darwin.close(descriptor)
+                    if failure == EWOULDBLOCK || failure == EAGAIN {
+                        if let identifier = Bundle.main.bundleIdentifier,
+                           let running = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
+                            .first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {
+                            running.activate(options: [.activateAllWindows])
+                        }
+                        return
+                    }
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(failure))
+                }
+                lockFileDescriptor = descriptor
+            } catch {
+                let chinese = (Locale.preferredLanguages.first ?? "").hasPrefix("zh")
+                let alert = NSAlert()
+                alert.alertStyle = .critical
+                alert.messageText = chinese ? "无法安全打开 JustNow 日志" : "JustNow could not safely open your journal"
+                alert.informativeText = (chinese ? "无法锁定数据目录。为保护已有记录，应用不会继续启动。\n\n" : "The data directory could not be locked. JustNow will not start, to protect your existing records.\n\n") + error.localizedDescription
+                alert.runModal()
+                return
+            }
+        }
+        defer { if lockFileDescriptor >= 0 { Darwin.close(lockFileDescriptor) } }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -184,7 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "JustNow · 刚才",
-            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0",
+            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.1",
             .credits: NSAttributedString(string: model.text("一句话，留下刚才。\n免费开源 · MIT", "A small pause. A clearer day.\nFree & open source · MIT"))
         ])
     }

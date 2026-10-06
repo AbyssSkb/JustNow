@@ -162,9 +162,9 @@ struct MainView: View {
     private var daySummary: some View {
         HStack(spacing: 0) {
             summaryMetric(value: durationLabel(model.recordedDuration, model: model), title: model.text("已记录的时间", "Time captured"), icon: "clock")
-            Rectangle().fill(Theme.line).frame(width: 1, height: 32).padding(.horizontal, 24)
+            Rectangle().fill(Theme.line).frame(width: 1, height: 32).padding(.horizontal, 16)
             summaryMetric(value: "\(model.completedCount)", title: model.text("日常片段", "Entries written"), icon: "text.alignleft")
-            Rectangle().fill(Theme.line).frame(width: 1, height: 32).padding(.horizontal, 24)
+            Rectangle().fill(Theme.line).frame(width: 1, height: 32).padding(.horizontal, 16)
             summaryMetric(value: "\(model.pendingCount)", title: model.text("待补记", "To fill in"), icon: "square.and.pencil")
         }
         .journalCard(padding: 21)
@@ -176,7 +176,8 @@ struct MainView: View {
                 .foregroundStyle(Theme.secondary)
             VStack(alignment: .leading, spacing: 5) {
                 Text(value).font(.system(size: 21, weight: .semibold, design: .rounded))
-                Text(title).font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Text(title).font(.system(size: 11)).foregroundStyle(Theme.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
@@ -184,30 +185,39 @@ struct MainView: View {
     }
 
     private var historyControls: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) { historyDateNavigation; Spacer(minLength: 12); historySearch.frame(width: 210) }
+            VStack(alignment: .leading, spacing: 12) { historyDateNavigation; historySearch }
+        }
+    }
+
+    private var historyDateNavigation: some View {
         HStack(spacing: 10) {
             Button { shiftDay(-1) } label: { Image(systemName: "chevron.left") }
                 .buttonStyle(IconButtonStyle()).help(model.text("前一天", "Previous day"))
-            DatePicker(model.text("日期", "Date"), selection: $model.selectedDay, displayedComponents: .date)
-                .labelsHidden().datePickerStyle(.compact)
+            JournalDateField(date: $model.selectedDay, label: model.text("日期", "Date"), locale: Locale(identifier: model.text("zh_CN", "en_US")))
+                .frame(width: 174)
             Button { shiftDay(1) } label: { Image(systemName: "chevron.right") }
                 .buttonStyle(IconButtonStyle()).help(model.text("后一天", "Next day"))
             Button(model.text("今天", "Today")) { model.selectedDay = model.now }
                 .buttonStyle(ActionButtonStyle(primary: false, compact: true))
-            Spacer(minLength: 12)
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(Theme.secondary)
-                TextField(model.text("搜索当天记录", "Search this day"), text: $model.searchText)
-                    .textFieldStyle(.plain).font(.system(size: 12))
-                if !model.searchText.isEmpty {
-                    Button { model.searchText = "" } label: { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain).foregroundStyle(Theme.secondary)
-                        .accessibilityLabel(model.text("清空搜索", "Clear search"))
-                }
-            }
-            .padding(10).frame(width: 210)
-            .background(Theme.card, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
         }
+    }
+
+    private var historySearch: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(Theme.secondary)
+            TextField(model.text("搜索当天记录", "Search this day"), text: $model.searchText)
+                .textFieldStyle(.plain).font(.system(size: 12))
+            if !model.searchText.isEmpty {
+                Button { model.searchText = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain).foregroundStyle(Theme.secondary)
+                    .accessibilityLabel(model.text("清空搜索", "Clear search"))
+            }
+        }
+        .padding(.horizontal, 12).frame(height: 36)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.line))
     }
 
     private var timeline: some View {
@@ -215,9 +225,10 @@ struct MainView: View {
             HStack {
                 Text(model.selectedSection == .today ? model.text("今天的片段", "Today's entries") : dateLabel(model.selectedDay, model: model))
                     .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1).layoutPriority(1)
                 Spacer()
                 Text(model.text("每一小段，都算数", "Every little moment counts"))
-                    .font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary).lineLimit(1)
             }
             if model.selectedDayEntries.isEmpty {
                 VStack(spacing: 14) {
@@ -238,11 +249,13 @@ struct MainView: View {
                     ForEach(Array(model.selectedDayEntries.enumerated()), id: \.element.id) { index, entry in
                         EntryRow(model: model, entry: entry)
                         if index < model.selectedDayEntries.count - 1 {
-                            Rectangle().fill(Theme.line).frame(height: 1).padding(.leading, 128)
+                            Rectangle().fill(Theme.line).frame(height: 1)
+                                .padding(.leading, 142).padding(.trailing, 24)
                         }
                     }
                 }
                 .journalCard(padding: 0)
+                .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
             }
         }
     }
@@ -262,7 +275,7 @@ private struct RecordingCard: View {
                 HStack(spacing: 6) {
                     Circle().fill(model.isRecording ? Theme.accent : Theme.secondary.opacity(0.6)).frame(width: 5, height: 5)
                     Text(model.isRecording ? model.text("记录进行中", "RECORDING") : model.text("从现在开始", "A MOMENT TO BEGIN"))
-                        .font(.system(size: 10, weight: .semibold)).tracking(1)
+                        .font(.system(size: 11, weight: .semibold)).tracking(0.8)
                         .foregroundStyle(model.isRecording ? Theme.accent : Theme.secondary)
                 }
                 Text(model.isRecording ? model.text("专注眼前，稍后记下。", "Be here. Write it down later.") : model.text("刚才，你做了什么？", "What have you been up to?"))
@@ -270,15 +283,14 @@ private struct RecordingCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Text(model.isRecording ? model.text("下一次提醒", "Next reminder") + "  " + timeLabel(model.nextReminderDate ?? model.now) : model.text("每隔 \(model.preferences.intervalMinutes) 分钟，用一句话留住刚才。", "Every \(model.preferences.intervalMinutes) min, capture what you just did."))
                     .font(.system(size: 12)).foregroundStyle(Theme.secondary)
-                HStack(spacing: 12) {
-                    Button { model.isRecording ? model.stopRecording() : model.startRecording() } label: {
-                        Label(model.isRecording ? model.text("结束记录", "Stop recording") : model.text("开始记录", "Start recording"), systemImage: model.isRecording ? "stop.fill" : "play.fill")
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        recordingButton
+                        if !model.isRecording { recordingHint.fixedSize() }
                     }
-                    .buttonStyle(ActionButtonStyle(primary: !model.isRecording))
-                    .disabled(model.hasStorageError)
-                    if !model.isRecording {
-                        Text(model.text("由你开始，也由你结束", "Start and stop on your terms"))
-                            .font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        recordingButton
+                        if !model.isRecording { recordingHint }
                     }
                 }
                 .padding(.top, 4)
@@ -296,7 +308,7 @@ private struct RecordingCard: View {
                         Text(countdown(model.remainingSeconds))
                             .font(.system(size: 28, weight: .medium, design: .monospaced))
                         Text(model.text("距离提醒", "until next check-in"))
-                            .font(.system(size: 9)).foregroundStyle(Theme.secondary)
+                            .font(.system(size: 10)).foregroundStyle(Theme.secondary)
                     } else {
                         Image(systemName: "clock").font(.system(size: 32, weight: .ultraLight)).foregroundStyle(Theme.accent)
                         Text(model.text("\(model.preferences.intervalMinutes) 分钟", "\(model.preferences.intervalMinutes) min"))
@@ -308,6 +320,21 @@ private struct RecordingCard: View {
             .accessibilityElement(children: .combine)
         }
         .journalCard(padding: 28)
+    }
+
+    private var recordingButton: some View {
+        Button { model.isRecording ? model.stopRecording() : model.startRecording() } label: {
+            Label(model.isRecording ? model.text("结束记录", "Stop recording") : model.text("开始记录", "Start recording"), systemImage: model.isRecording ? "stop.fill" : "play.fill")
+        }
+        .buttonStyle(ActionButtonStyle(primary: !model.isRecording))
+        .disabled(model.hasStorageError)
+        .fixedSize()
+    }
+
+    private var recordingHint: some View {
+        Text(model.text("由你开始，也由你结束", "Start and stop on your terms"))
+            .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -322,19 +349,19 @@ private struct EntryRow: View {
                     Text(timeLabel(entry.start) + " – " + timeLabel(entry.end))
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                     Text(durationLabel(entry.duration, model: model))
-                        .font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                        .font(.system(size: 11)).foregroundStyle(Theme.secondary).lineLimit(1)
                 }
                 .frame(width: 98, alignment: .leading).padding(.top, 2)
                 VStack(alignment: .leading, spacing: 8) {
                     if entry.isPending {
                         HStack(spacing: 5) {
-                            Image(systemName: "square.and.pencil").font(.system(size: 10))
-                            Text(model.text("待补记", "To fill in")).font(.system(size: 10, weight: .medium))
+                            Image(systemName: "square.and.pencil").font(.system(size: 11))
+                            Text(model.text("待补记", "To fill in")).font(.system(size: 11, weight: .medium))
                         }
                         .foregroundStyle(Theme.amber)
                         Text(entry.text.isEmpty ? model.text("这段时间，你做了什么？", "What did you do during this time?") : entry.text)
                             .font(.system(size: 13)).foregroundStyle(entry.text.isEmpty ? Theme.secondary : Theme.ink)
-                            .lineLimit(3).lineSpacing(4)
+                            .lineLimit(3).lineSpacing(5).multilineTextAlignment(.leading)
                     } else {
                         Text(entry.text).font(.system(size: 13)).foregroundStyle(Theme.ink)
                             .lineLimit(4).lineSpacing(5).multilineTextAlignment(.leading)
@@ -356,6 +383,9 @@ private struct EntryRow: View {
 
 private struct SettingsView: View {
     @ObservedObject var model: AppModel
+    @State private var intervalText = ""
+    @State private var intervalError: String?
+    @FocusState private var editingInterval: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             VStack(alignment: .leading, spacing: 20) {
@@ -370,16 +400,34 @@ private struct SettingsView: View {
                 }
                 HStack(spacing: 9) {
                     ForEach([15, 30, 45, 60], id: \.self) { minutes in
-                        Button(model.text("\(minutes) 分钟", "\(minutes) min")) { change { $0.intervalMinutes = minutes } }
+                        Button(model.text("\(minutes) 分钟", "\(minutes) min")) {
+                            intervalText = String(minutes)
+                            intervalError = nil
+                            editingInterval = false
+                            change { $0.intervalMinutes = minutes }
+                        }
                             .buttonStyle(ActionButtonStyle(primary: model.preferences.intervalMinutes == minutes, compact: true))
                     }
                     Spacer()
-                    Text(model.text("自定义", "Custom")).font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                    TextField("", value: intervalBinding, format: .number)
-                        .textFieldStyle(.roundedBorder).frame(width: 50)
-                        .accessibilityLabel(model.text("自定义提醒间隔（分钟）", "Custom interval in minutes"))
-                    Stepper("", value: intervalBinding, in: 1...240).labelsHidden()
-                    Text(model.text("分钟", "min")).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                }
+                HStack(spacing: 12) {
+                    Text(model.text("自定义", "Custom")).font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                    HStack(spacing: 6) {
+                        TextField("30", text: $intervalText)
+                            .textFieldStyle(.plain).font(.system(size: 13, weight: .medium))
+                            .monospacedDigit().multilineTextAlignment(.center).frame(width: 40)
+                            .focused($editingInterval).onSubmit(applyInterval)
+                            .accessibilityLabel(model.text("自定义提醒间隔（分钟）", "Custom interval in minutes"))
+                        Text(model.text("分钟", "min")).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    }
+                    .padding(.horizontal, 12).frame(height: 36)
+                    .background(Theme.inset, in: RoundedRectangle(cornerRadius: 9))
+                    .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(intervalError != nil ? Theme.amber : editingInterval ? Theme.accent.opacity(0.65) : Theme.line))
+                    Text(model.text("1–240 分钟", "1–240 minutes")).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    Spacer()
+                }
+                if let intervalError {
+                    Text(intervalError).font(.system(size: 11)).foregroundStyle(Theme.amber)
                 }
                 Divider().overlay(Theme.line)
                 settingRow(title: model.text("提醒声音", "Reminder sound"), subtitle: model.text("弹窗出现时播放轻提示音", "A gentle sound when a check-in appears")) {
@@ -391,19 +439,27 @@ private struct SettingsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 sectionHeading(model.text("外观与启动", "Make it yours"), icon: "paintbrush.pointed")
                 settingRow(title: model.text("外观", "Appearance"), subtitle: model.text("让 JustNow 融入你的桌面", "A comfortable fit for your desktop")) {
-                    Picker("", selection: Binding(get: { model.preferences.appearance }, set: { value in change { $0.appearance = value } })) {
-                        Text(model.text("跟随系统", "System")).tag(AppAppearance.system)
-                        Text(model.text("浅色", "Light")).tag(AppAppearance.light)
-                        Text(model.text("深色", "Dark")).tag(AppAppearance.dark)
-                    }.labelsHidden().frame(width: 125).accessibilityLabel(model.text("外观", "Appearance"))
+                    Menu {
+                        Picker(model.text("外观", "Appearance"), selection: Binding(get: { model.preferences.appearance }, set: { value in change { $0.appearance = value } })) {
+                            Text(model.text("跟随系统", "System")).tag(AppAppearance.system)
+                            Text(model.text("浅色", "Light")).tag(AppAppearance.light)
+                            Text(model.text("深色", "Dark")).tag(AppAppearance.dark)
+                        }.pickerStyle(.inline)
+                    } label: { menuLabel(appearanceTitle) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .accessibilityLabel(model.text("外观", "Appearance"))
                 }
                 Divider().overlay(Theme.line)
                 settingRow(title: model.text("语言", "Language"), subtitle: model.text("界面语言即时切换", "Changes immediately")) {
-                    Picker("", selection: Binding(get: { model.preferences.language }, set: { value in change { $0.language = value } })) {
-                        Text(model.text("跟随系统", "System")).tag(AppLanguage.system)
-                        Text("简体中文").tag(AppLanguage.chinese)
-                        Text("English").tag(AppLanguage.english)
-                    }.labelsHidden().frame(width: 125).accessibilityLabel(model.text("语言", "Language"))
+                    Menu {
+                        Picker(model.text("语言", "Language"), selection: Binding(get: { model.preferences.language }, set: { value in change { $0.language = value } })) {
+                            Text(model.text("跟随系统", "System")).tag(AppLanguage.system)
+                            Text("简体中文").tag(AppLanguage.chinese)
+                            Text("English").tag(AppLanguage.english)
+                        }.pickerStyle(.inline)
+                    } label: { menuLabel(languageTitle) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .accessibilityLabel(model.text("语言", "Language"))
                 }
                 Divider().overlay(Theme.line)
                 settingRow(title: model.text("登录时启动", "Launch at login"), subtitle: model.text("启动后等待你手动开始记录", "Ready when you are. Recording always starts manually.")) {
@@ -433,18 +489,61 @@ private struct SettingsView: View {
             HStack {
                 BrandMark(size: 22)
                 Text("JustNow").font(.system(size: 12, weight: .semibold, design: .rounded))
-                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0")
-                    .font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.1")
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 Spacer()
                 Text(model.text("用 MIT 许可开源 · 为日常留一点空间", "Open source under MIT · A little room for your day"))
-                    .font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.9)
             }
             .padding(.horizontal, 4).padding(.bottom, 8)
         }
+        .onAppear { intervalText = String(model.preferences.intervalMinutes) }
+        .onChange(of: model.preferences.intervalMinutes) { _, value in
+            intervalText = String(value)
+            intervalError = nil
+        }
+        .onChange(of: editingInterval) { wasEditing, isEditing in
+            if wasEditing && !isEditing { applyInterval() }
+        }
+        .onDisappear { applyInterval() }
     }
 
-    private var intervalBinding: Binding<Int> {
-        Binding(get: { model.preferences.intervalMinutes }, set: { value in change { $0.intervalMinutes = min(240, max(1, value)) } })
+    private func applyInterval() {
+        guard let value = Int(intervalText.trimmingCharacters(in: .whitespacesAndNewlines)), (1...240).contains(value) else {
+            intervalError = model.text("请输入 1–240 之间的整数。", "Enter a whole number between 1 and 240.")
+            return
+        }
+        intervalText = String(value)
+        intervalError = nil
+        if value != model.preferences.intervalMinutes { change { $0.intervalMinutes = value } }
+    }
+
+    private var appearanceTitle: String {
+        switch model.preferences.appearance {
+        case .system: return model.text("跟随系统", "System")
+        case .light: return model.text("浅色", "Light")
+        case .dark: return model.text("深色", "Dark")
+        }
+    }
+
+    private var languageTitle: String {
+        switch model.preferences.language {
+        case .system: return model.text("跟随系统", "System")
+        case .chinese: return "简体中文"
+        case .english: return "English"
+        }
+    }
+
+    private func menuLabel(_ value: String) -> some View {
+        HStack(spacing: 12) {
+            Text(value).font(.system(size: 12, weight: .medium)).lineLimit(1)
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.secondary)
+        }
+        .foregroundStyle(Theme.ink).padding(.horizontal, 12).frame(width: 136, height: 36)
+        .background(Theme.inset, in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.line))
     }
 
     private func change(_ update: (inout Preferences) -> Void) {
@@ -465,6 +564,7 @@ private struct SettingsView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(title).font(.system(size: 13, weight: .medium))
                 Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             control()
@@ -548,7 +648,7 @@ struct PromptView: View {
     @ObservedObject var model: AppModel
     let entryID: UUID
     @State private var draft: String
-    @FocusState private var writing: Bool
+    @State private var writing = false
 
     init(model: AppModel, entryID: UUID) {
         self.model = model
@@ -565,7 +665,7 @@ struct PromptView: View {
                 Text("JustNow").font(.system(size: 13, weight: .semibold, design: .rounded))
                 Spacer()
                 Text(model.text("给刚才留句话", "A few words for just now"))
-                    .font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
             }
             VStack(alignment: .leading, spacing: 9) {
                 Text(model.text("刚才，你做了什么？", "What have you been up to?"))
@@ -580,17 +680,17 @@ struct PromptView: View {
                     .foregroundStyle(Theme.secondary)
                 }
             }
-            journalTextEditor(text: $draft, placeholder: model.text("做了什么、想到什么……随意写下来。", "What you did, what crossed your mind… just write."), focused: $writing)
+            JournalTextEditor(text: $draft, placeholder: model.text("做了什么、想到什么……随意写下来。", "What you did, what crossed your mind… just write."), focused: $writing)
                 .frame(minHeight: 128, maxHeight: .infinity)
             HStack {
                 Text(model.text("不必写得完美，一句话也很好。", "A sentence is plenty."))
-                    .font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 Spacer()
                 Button(model.text("稍后", "Later")) { model.dismissPrompt() }
                     .buttonStyle(ActionButtonStyle(primary: false, compact: true))
                     .keyboardShortcut(.escape, modifiers: [])
                 Button { _ = model.savePrompt(id: entryID, text: draft) } label: {
-                    HStack(spacing: 8) { Text(model.text("保存", "Save")); Text("⌘↵").font(.system(size: 10)).opacity(0.65) }
+                    HStack(alignment: .firstTextBaseline, spacing: 8) { Text(model.text("保存", "Save")); Text("⌘↵").font(.system(size: 10)).opacity(0.65) }
                 }
                 .buttonStyle(ActionButtonStyle(compact: true))
                 .keyboardShortcut(.return, modifiers: .command)
@@ -616,7 +716,7 @@ private struct EntryEditorView: View {
     @State private var draft: String
     @State private var confirmDelete = false
     @State private var savedOrDeleted = false
-    @FocusState private var writing: Bool
+    @State private var writing = false
     @Environment(\.dismiss) private var dismiss
 
     init(model: AppModel, request: EntryEditorRequest) {
@@ -644,17 +744,21 @@ private struct EntryEditorView: View {
                 HStack {
                     Text(model.text("开始", "From")).font(.system(size: 12)).foregroundStyle(Theme.secondary)
                     Spacer()
-                    DatePicker(model.text("开始时间", "Start time"), selection: $start, displayedComponents: [.date, .hourAndMinute]).labelsHidden()
+                    JournalDateField(date: $start, label: model.text("开始日期", "Start date"), locale: Locale(identifier: model.text("zh_CN", "en_US")))
+                        .frame(width: 185)
+                    JournalTimeField(date: $start, label: model.text("开始时间", "Start time"))
                 }
                 Divider().overlay(Theme.line)
                 HStack {
                     Text(model.text("结束", "To")).font(.system(size: 12)).foregroundStyle(Theme.secondary)
                     Spacer()
-                    DatePicker(model.text("结束时间", "End time"), selection: $end, displayedComponents: [.date, .hourAndMinute]).labelsHidden()
+                    JournalDateField(date: $end, label: model.text("结束日期", "End date"), locale: Locale(identifier: model.text("zh_CN", "en_US")))
+                        .frame(width: 185)
+                    JournalTimeField(date: $end, label: model.text("结束时间", "End time"))
                 }
             }
             .padding(16).background(Theme.inset, in: RoundedRectangle(cornerRadius: 12))
-            journalTextEditor(text: $draft, placeholder: model.text("这段时间，你做了什么？", "What did you do during this time?"), focused: $writing)
+            JournalTextEditor(text: $draft, placeholder: model.text("这段时间，你做了什么？", "What did you do during this time?"), focused: $writing)
                 .frame(height: 180)
             if end <= start {
                 Text(model.text("结束时间需要晚于开始时间。", "The end needs to be after the start."))
@@ -665,7 +769,7 @@ private struct EntryEditorView: View {
             HStack {
                 if request.entry != nil {
                     Button { confirmDelete = true } label: { Image(systemName: "trash") }
-                        .buttonStyle(IconButtonStyle()).help(model.text("删除记录", "Delete entry"))
+                        .buttonStyle(IconButtonStyle(compact: false)).help(model.text("删除记录", "Delete entry"))
                 }
                 Spacer()
                 Button(model.text("取消", "Cancel")) { preserveDraft(); dismiss() }
@@ -704,20 +808,6 @@ private struct EntryEditorView: View {
     private func preserveDraft() {
         if !savedOrDeleted, let entry = request.entry, entry.isPending { model.setDraft(id: entry.id, text: draft) }
     }
-}
-
-private func journalTextEditor(text: Binding<String>, placeholder: String, focused: FocusState<Bool>.Binding) -> some View {
-    ZStack(alignment: .topLeading) {
-        if text.wrappedValue.isEmpty {
-            Text(placeholder).font(.system(size: 13)).foregroundStyle(Theme.secondary.opacity(0.72))
-                .padding(.horizontal, 15).padding(.vertical, 13).allowsHitTesting(false)
-        }
-        TextEditor(text: text).font(.system(size: 13)).lineSpacing(5)
-            .scrollContentBackground(.hidden).padding(9)
-            .focused(focused).accessibilityLabel(placeholder)
-    }
-    .background(Theme.inset, in: RoundedRectangle(cornerRadius: 13))
-    .overlay(RoundedRectangle(cornerRadius: 13).stroke(focused.wrappedValue ? Theme.accent.opacity(0.55) : Theme.line, lineWidth: 1))
 }
 
 private func timeLabel(_ date: Date) -> String {

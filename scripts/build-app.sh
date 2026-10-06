@@ -2,13 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.1.1}"
 DIST="$ROOT/dist"
 APP="$DIST/JustNow.app"
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  printf 'VERSION must be a numeric semantic version, such as 0.1.0.\n' >&2
+  printf 'VERSION must be a numeric semantic version, such as 0.1.1.\n' >&2
   exit 1
 fi
 if [[ -n "${SIGNING_IDENTITY:-}" && "$SIGNING_IDENTITY" != "Developer ID Application:"* ]]; then

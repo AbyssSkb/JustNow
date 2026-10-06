@@ -11,8 +11,11 @@ git clone https://github.com/AbyssSkb/justnow.git
 cd justnow
 swift test
 ./scripts/build-app.sh
+python3 scripts/check-single-instance.py dist/JustNow.app/Contents/MacOS/JustNow
 open dist/JustNow.app
 ```
+
+单实例验证使用 Python 3 标准库，在隔离的临时用户目录中占用日志锁，确认第二个实例会在读取或写入日志前退出，不会访问真实日志。
 
 - 一个 PR 解决一个清楚的问题；附上复现步骤和验证结果。
 - 修改计时、恢复或存储行为时，增加能够复现问题的核心测试。
@@ -32,4 +35,4 @@ swift scripts/generate-icon.swift Resources
 
 ## English
 
-Use macOS 14+ and Swift 5.9+. Run `swift test` and `./scripts/build-app.sh` before submitting. Keep changes focused, add a regression check for timing or persistence changes, and include light/dark screenshots for UI changes. Never commit private journal data, certificates, or keys. Contributions are licensed under MIT.
+Use macOS 14+ and Swift 5.9+. Run `swift test`, `./scripts/build-app.sh`, and `python3 scripts/check-single-instance.py dist/JustNow.app/Contents/MacOS/JustNow` before submitting. The Python check uses only the standard library and an isolated temporary journal. Keep changes focused, add a regression check for timing or persistence changes, and include light/dark screenshots for UI changes. Never commit private journal data, certificates, or keys. Contributions are licensed under MIT.

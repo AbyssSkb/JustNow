@@ -13,9 +13,11 @@ JustNow 是一个原生 macOS 时间日志。手动开始后，每隔一段时�
 ![JustNow 主界面](Resources/screenshots/overview.png)
 
 <details>
-<summary>查看提醒窗口、深色外观与首次使用引导</summary>
+<summary>查看提醒与编辑窗口、深色外观与首次使用引导</summary>
 
 ![JustNow 提醒窗口](Resources/screenshots/reminder.png)
+
+![JustNow 记录编辑窗口](Resources/screenshots/editor.png)
 
 ![JustNow 深色外观](Resources/screenshots/dark.png)
 
@@ -83,7 +85,7 @@ JustNow **不读取屏幕、应用使用记录或浏览器历史，不包含遥�
 
 ```sh
 SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
-VERSION=0.1.0 ./scripts/build-app.sh
+VERSION=0.1.1 ./scripts/build-app.sh
 
 SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
 NOTARY_PROFILE='justnow-notary' ./scripts/notarize.sh
@@ -91,7 +93,7 @@ NOTARY_PROFILE='justnow-notary' ./scripts/notarize.sh
 
 先按照 [Apple 的公证流程](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow) 创建 Keychain profile。脚本会检查 Developer ID 签名、hardened runtime 与时间戳；提交 ZIP、等待通过后将票据附加到 app，再重新生成 ZIP / DMG，提交并附加 DMG 票据，最后验证与更新校验文件。ZIP 本身不能附加票据，分发的 ZIP 内包含已附加票据的 app。
 
-GitHub Actions 在 push / PR 时测试与构建；推送 `v0.1.0` 这类标签会创建一个带安装包的**草稿 Release**。CI 未配置签名凭据，附件会明确标为 ad-hoc / 未公证。正式发布前，用公证后的安装包替换草稿附件。没有证书时，仍可分享源码和清楚标注签名状态的构建。
+GitHub Actions 在 push / PR 时测试与构建；推送 `v0.1.1` 这类标签会创建一个带安装包的**草稿 Release**。CI 未配置签名凭据，附件会明确标为 ad-hoc / 未公证。正式发布前，用公证后的安装包替换草稿附件。没有证书时，仍可分享源码和清楚标注签名状态的构建。
 
 ## 参与开发
 
