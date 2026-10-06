@@ -349,7 +349,7 @@ private struct JournalTimeChooser: View {
     let close: () -> Void
     @State private var hour: Int
     @State private var minute: Int
-    @State private var minuteGroup: Int
+    @State private var choosingHour = true
     private let calendar = Calendar(identifier: .gregorian)
     private var chinese: Bool { locale.identifier.hasPrefix("zh") }
     private var selectedDate: Date? { CalendarSelection.replacingTime(of: date, hour: hour, minute: minute, calendar: calendar) }
@@ -360,48 +360,53 @@ private struct JournalTimeChooser: View {
         self.close = close
         let calendar = Calendar(identifier: .gregorian)
         _hour = State(initialValue: calendar.component(.hour, from: date.wrappedValue))
-        let minute = calendar.component(.minute, from: date.wrappedValue)
-        _minute = State(initialValue: minute)
-        _minuteGroup = State(initialValue: minute / 10)
+        _minute = State(initialValue: calendar.component(.minute, from: date.wrappedValue))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(chinese ? "选择时间" : "Choose time").font(.system(size: 13, weight: .semibold))
-                Spacer()
-                Text(String(format: "%02d:%02d", hour, minute))
-                    .font(.system(size: 22, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(Theme.accent)
+            HStack(spacing: 8) {
+                Button { choosingHour = true } label: {
+                    VStack(spacing: 4) {
+                        Text(chinese ? "小时" : "Hour").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                        Text(String(format: "%02d", hour)).font(.system(size: 22, weight: .medium, design: .rounded)).monospacedDigit()
+                    }
+                    .calendarChoiceLabel(height: 64)
+                }
+                .buttonStyle(CalendarChoiceStyle(selected: choosingHour))
+                .accessibilityLabel(chinese ? "选择小时" : "Choose hour")
+                .accessibilityValue(String(format: "%02d", hour))
+                .accessibilityAddTraits(choosingHour ? .isSelected : [])
+                Text(":").font(.system(size: 22, weight: .medium)).foregroundStyle(Theme.secondary)
+                Button { choosingHour = false } label: {
+                    VStack(spacing: 4) {
+                        Text(chinese ? "分钟" : "Minute").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                        Text(String(format: "%02d", minute)).font(.system(size: 22, weight: .medium, design: .rounded)).monospacedDigit()
+                    }
+                    .calendarChoiceLabel(height: 64)
+                }
+                .buttonStyle(CalendarChoiceStyle(selected: !choosingHour))
+                .accessibilityLabel(chinese ? "选择分钟" : "Choose minute")
+                .accessibilityValue(String(format: "%02d", minute))
+                .accessibilityAddTraits(!choosingHour ? .isSelected : [])
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text(chinese ? "小时 · 24 小时制" : "Hour · 24-hour clock")
-                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                HStack {
+                    Text(choosingHour ? (chinese ? "选择小时" : "Choose an hour") : (chinese ? "选择分钟" : "Choose a minute"))
+                    Spacer()
+                    Text(chinese ? "24 小时制" : "24-hour clock")
+                }
+                .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 6), spacing: 4) {
-                    ForEach(0..<24) { value in
-                        Button { hour = value } label: { Text(String(format: "%02d", value)).monospacedDigit().calendarChoiceLabel() }
-                            .buttonStyle(CalendarChoiceStyle(selected: hour == value))
-                            .accessibilityLabel(chinese ? "\(value)时" : "Hour \(value)")
-                            .accessibilityAddTraits(hour == value ? .isSelected : [])
-                    }
-                }
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                Text(chinese ? "分钟" : "Minute").font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                HStack(spacing: 4) {
-                    ForEach(0..<6) { group in
-                        Button { minuteGroup = group } label: { Text(String(format: "%02d–%02d", group * 10, group * 10 + 9)).font(.system(size: 10, weight: .medium)).monospacedDigit().calendarChoiceLabel() }
-                            .buttonStyle(CalendarChoiceStyle(selected: minuteGroup == group))
-                            .accessibilityLabel(chinese ? "\(group * 10)至\(group * 10 + 9)分" : "Minutes \(group * 10) to \(group * 10 + 9)")
-                            .accessibilityAddTraits(minuteGroup == group ? .isSelected : [])
-                    }
-                }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 5), spacing: 4) {
-                    ForEach((minuteGroup * 10)..<(minuteGroup * 10 + 10), id: \.self) { value in
-                        Button { minute = value } label: { Text(String(format: "%02d", value)).monospacedDigit().calendarChoiceLabel() }
-                            .buttonStyle(CalendarChoiceStyle(selected: minute == value))
-                            .disabled(CalendarSelection.replacingTime(of: date, hour: hour, minute: value, calendar: calendar) == nil)
-                            .accessibilityLabel(chinese ? "\(value)分" : "Minute \(value)")
-                            .accessibilityAddTraits(minute == value ? .isSelected : [])
+                    ForEach(0..<(choosingHour ? 24 : 60), id: \.self) { value in
+                        Button {
+                            if choosingHour { hour = value; choosingHour = false }
+                            else { minute = value }
+                        } label: { Text(String(format: "%02d", value)).monospacedDigit().calendarChoiceLabel() }
+                        .buttonStyle(CalendarChoiceStyle(selected: (choosingHour ? hour : minute) == value))
+                        .disabled(!choosingHour && CalendarSelection.replacingTime(of: date, hour: hour, minute: value, calendar: calendar) == nil)
+                        .accessibilityLabel(choosingHour ? (chinese ? "\(value)时" : "Hour \(value)") : (chinese ? "\(value)分" : "Minute \(value)"))
+                        .accessibilityAddTraits((choosingHour ? hour : minute) == value ? .isSelected : [])
                     }
                 }
             }
@@ -440,6 +445,7 @@ private struct CalendarChoiceSurface: View {
     let today: Bool
     @Environment(\.isEnabled) private var enabled
     @Environment(\.isFocused) private var focused
+    @Environment(\.colorScheme) private var colorScheme
     @State private var hovering = false
 
     var body: some View {
@@ -447,7 +453,7 @@ private struct CalendarChoiceSurface: View {
         configuration.label
             .font(.system(size: 12, weight: selected || today ? .semibold : .medium))
             .lineLimit(1).minimumScaleFactor(0.85)
-            .foregroundStyle(selected || today ? Theme.accent : Theme.ink)
+            .foregroundStyle((selected || today) && colorScheme != .dark ? Theme.accent : Theme.ink)
             .background(selected ? Theme.accent.opacity(0.14) : hovering ? Theme.inset : .clear, in: shape)
             .overlay(shape.strokeBorder(focused ? Theme.accent.opacity(0.6) : today ? Theme.accent.opacity(0.25) : .clear))
             .opacity(enabled ? configuration.isPressed ? 0.65 : 1 : 0.3)

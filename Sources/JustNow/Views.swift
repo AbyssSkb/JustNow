@@ -363,7 +363,7 @@ private struct EntryRow: View {
     @State private var hovering = false
     var body: some View {
         Button { model.openEditor(entry) } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 20) {
+            HStack(alignment: .center, spacing: 20) {
                 Text(timeLabel(entry.start) + " – " + timeLabel(entry.end))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .frame(width: 98, alignment: .leading)
@@ -384,7 +384,7 @@ private struct EntryRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "pencil").font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                    .opacity(hovering ? 1 : 0.35).padding(.top, 3)
+                    .opacity(hovering ? 1 : 0.35)
             }
             .padding(.horizontal, 24).padding(.vertical, 19)
             .frame(minHeight: 56)
@@ -511,7 +511,7 @@ private struct SettingsView: View {
             HStack {
                 BrandMark(size: 22)
                 Text("JustNow").font(.system(size: 12, weight: .semibold, design: .rounded))
-                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.5")
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.6")
                     .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 Spacer()
                 Text(model.text("用 MIT 许可开源 · 为日常留一点空间", "Open source under MIT · A little room for your day"))
