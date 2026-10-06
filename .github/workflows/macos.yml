@@ -1,0 +1,76 @@
+name: macOS test and build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: swift test
+      - name: Check packaging scripts
+        run: bash -n scripts/build-app.sh scripts/package-app.sh scripts/notarize.sh
+      - name: Build universal app
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$REF_TYPE" == tag ]]; then
+            export VERSION="${REF_NAME#v}"
+          fi
+          ./scripts/build-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JustNow-macOS-universal-ad-hoc
+          path: |
+            dist/*.zip
+            dist/*.dmg
+            dist/*SHA256.txt
+          if-no-files-found: error
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: JustNow-macOS-universal-ad-hoc
+          path: dist
+      - name: Prepare draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cat > release-notes.md <<'NOTES'
+          JustNow — a private, free-text activity journal for macOS 14 and later.
+
+          Universal build for Apple Silicon and Intel. Open the DMG and drag JustNow into Applications.
+
+          **Signing status:** These CI builds are ad-hoc signed and are **not Apple notarized**. Gatekeeper may block downloaded builds. Build from source for local use, or replace these assets with Developer ID signed and notarized artifacts before presenting the release as a fully verified public download.
+
+          此 CI 构建仅使用 ad-hoc 签名，尚未经过 Apple 公证；从网络下载后 macOS 可能阻止打开。正式分发前请用 Developer ID 签名并公证的产物替换附件。
+
+          See README.md for usage, privacy, and release signing instructions.
+          NOTES
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            if [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" != true ]]; then
+              printf 'Refusing to replace assets of an already published release.\n' >&2
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/* --draft --verify-tag --title "JustNow $RELEASE_TAG" --notes-file release-notes.md
+          fi
