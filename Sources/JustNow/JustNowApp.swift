@@ -65,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         updates = UpdateController(enabled: !model.isDemo)
         updates.onBeforeRelaunch = { [weak self] targetVersion in
             guard let self else { return false }
-            let sourceVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.9"
+            let sourceVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.10"
             return self.model.prepareForUpdate(sourceVersion: sourceVersion, targetVersion: targetVersion)
         }
         updates.onCancel = { [weak self] in _ = self?.model.cancelPreparedUpdate() }
@@ -128,7 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         if reminderPanel == nil {
             let panel = ReminderPanel(
                 contentRect: NSRect(x: 0, y: 0, width: 520, height: 430),
-                styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+                styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.title = "JustNow"
             panel.titleVisibility = .hidden
             panel.titlebarAppearsTransparent = true
@@ -146,7 +146,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         panel.contentView = NSHostingView(rootView: PromptView(model: model, entryID: id).id(id))
         panel.center()
         panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     func window(_ window: NSWindow, willPositionSheet sheet: NSWindow, using rect: NSRect) -> NSRect {
@@ -248,7 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "JustNow · 刚才",
-            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.9",
+            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.10",
             .credits: NSAttributedString(string: model.text("一句话，留下刚才。\n免费开源 · MIT", "A small pause. A clearer day.\nFree & open source · MIT"))
         ])
     }

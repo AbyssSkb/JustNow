@@ -58,7 +58,7 @@ final class AppModel: ObservableObject {
     private var updating = false
 
     init(isDemo: Bool = false, showOnboarding: Bool = false, dataDirectory: URL? = nil,
-         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.9",
+         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.10",
          trackApplicationUsage: Bool = true, applicationTracker: ApplicationUsageTracker? = nil,
          idleSeconds: @escaping () -> TimeInterval = {
              CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!)
@@ -272,8 +272,8 @@ final class AppModel: ObservableObject {
         guard commit({ applyDrafts(to: &$0); try $0.updateEntry(id: id, text: text) }) else { return false }
         drafts.removeValue(forKey: id)
         draftSave?.cancel()
-        promptQueue.removeAll { $0 == id }
-        promptEntryID = nextQueuedEntry()
+        promptQueue.removeAll()
+        promptEntryID = nil
         errorMessage = nil
         return true
     }
