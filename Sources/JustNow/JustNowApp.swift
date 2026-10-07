@@ -65,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         updates = UpdateController(enabled: !model.isDemo)
         updates.onBeforeRelaunch = { [weak self] targetVersion in
             guard let self else { return false }
-            let sourceVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.11"
+            let sourceVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.12"
             return self.model.prepareForUpdate(sourceVersion: sourceVersion, targetVersion: targetVersion)
         }
         updates.onCancel = { [weak self] in _ = self?.model.cancelPreparedUpdate() }
@@ -142,10 +142,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         guard let panel = reminderPanel else { return }
         let hasClues = model.entries.first(where: { $0.id == id })?.applicationUsage != nil
-        panel.setContentSize(NSSize(width: 520, height: hasClues ? 570 : 430))
-        panel.contentView = NSHostingView(rootView: PromptView(model: model, entryID: id).id(id))
+        let hasPrevious = model.previousEntry(for: id) != nil
+        let host = NSHostingView(rootView: PromptView(model: model, entryID: id, onHeightChange: { [weak self, weak panel] height in
+            guard let panel else { return }
+            self?.resizeReminder(panel, height: height)
+        }).id(id))
+        host.sizingOptions = []
+        panel.contentView = host
+        panel.setContentSize(NSSize(width: 520, height: PromptView.height(hasPrevious: hasPrevious, hasClues: hasClues, hasError: model.errorMessage != nil)))
         panel.center()
         panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func resizeReminder(_ panel: NSPanel, height: CGFloat) {
+        let screen = panel.screen ?? NSScreen.main
+        let titlebarHeight = panel.frameRect(forContentRect: .zero).height
+        let actualHeight = min(height, screen.map { $0.visibleFrame.height - 24 - titlebarHeight } ?? height)
+        guard abs((panel.contentView?.bounds.height ?? 0) - actualHeight) > 0.5 else { return }
+        let top = panel.frame.maxY
+        var frame = panel.frame
+        frame.size = panel.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 520, height: actualHeight)).size
+        frame.origin.y = top - frame.height
+        if let screen {
+            frame.origin.y = max(screen.visibleFrame.minY + 12, min(frame.origin.y, screen.visibleFrame.maxY - frame.height - 12))
+        }
+        panel.setFrame(frame, display: true)
     }
 
     func window(_ window: NSWindow, willPositionSheet sheet: NSWindow, using rect: NSRect) -> NSRect {
@@ -247,7 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "JustNow · 刚才",
-            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.11",
+            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.12",
             .credits: NSAttributedString(string: model.text("一句话，留下刚才。\n免费开源 · MIT", "A small pause. A clearer day.\nFree & open source · MIT"))
         ])
     }

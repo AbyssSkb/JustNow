@@ -6,9 +6,10 @@ struct JournalTextEditor: View {
     @Binding var text: String
     let placeholder: String
     @Binding var focused: Bool
+    var onNextEvent: (() -> Void)? = nil
 
     var body: some View {
-        NativeJournalEditor(text: $text, placeholder: placeholder, focused: $focused)
+        NativeJournalEditor(text: $text, placeholder: placeholder, focused: $focused, onNextEvent: onNextEvent)
             .background(Theme.inset)
             .clipShape(RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13)
@@ -20,6 +21,7 @@ private struct NativeJournalEditor: NSViewRepresentable {
     @Binding var text: String
     let placeholder: String
     @Binding var focused: Bool
+    let onNextEvent: (() -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -76,6 +78,13 @@ private struct NativeJournalEditor: NSViewRepresentable {
             guard let editor = notification.object as? NSTextView else { return }
             parent.text = editor.string
         }
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard !textView.hasMarkedText(), let next = parent.onNextEvent,
+                  commandSelector == #selector(NSTextView.insertNewline(_:)) || commandSelector == #selector(NSTextView.insertNewlineIgnoringFieldEditor(_:)),
+                  NSApp.currentEvent?.modifierFlags.contains(.command) != true else { return false }
+            next()
+            return true
+        }
     }
 }
 
@@ -83,6 +92,30 @@ private final class JournalNSTextView: NSTextView {
     var placeholder = ""
     var wantsFocus = false
     var onFocusChanged: ((Bool) -> Void)?
+
+    override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        guard (delegate as? NativeJournalEditor.Coordinator)?.parent.onNextEvent != nil,
+              let text = (insertString as? String) ?? (insertString as? NSAttributedString)?.string else {
+            super.insertText(insertString, replacementRange: replacementRange)
+            return
+        }
+        super.insertText(String(text.map { $0.isNewline ? " " : $0 }), replacementRange: replacementRange)
+    }
+
+    override func paste(_ sender: Any?) {
+        if !insertPastedEventText() { super.paste(sender) }
+    }
+
+    override func pasteAsPlainText(_ sender: Any?) {
+        if !insertPastedEventText() { super.pasteAsPlainText(sender) }
+    }
+
+    private func insertPastedEventText() -> Bool {
+        guard (delegate as? NativeJournalEditor.Coordinator)?.parent.onNextEvent != nil,
+              let text = NSPasteboard.general.string(forType: .string), text.contains(where: { $0.isNewline }) else { return false }
+        insertText(text, replacementRange: selectedRange())
+        return true
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()

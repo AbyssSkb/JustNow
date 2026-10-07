@@ -15,6 +15,73 @@ final class AppModelTests: XCTestCase {
         Calendar.current.date(from: DateComponents(year: 2024, month: 2, day: day, hour: hour, minute: minute))!
     }
 
+    func testStructuredEventsPersistThroughNewDraftPromptAndEditedEntry() async throws {
+        try await MainActor.run {
+            let model = makeModel()
+            defer { try? FileManager.default.removeItem(at: model.dataDirectory) }
+            let storage = JournalStorage(directory: model.dataDirectory)
+            let initial = "读书 阅读论文方法\n项目 实现提醒布局\n 复盘今天的收获"
+            XCTAssertTrue(model.saveEditedEntry(id: nil, start: at(7, 9, 0), end: at(7, 9, 30), text: initial))
+            let id = try XCTUnwrap(model.entries.last?.id)
+            XCTAssertEqual(model.entries.last?.text, initial)
+            XCTAssertEqual(model.entries.last?.events, [JournalEvent(topic: "读书", content: "阅读论文方法"),
+                                                     JournalEvent(topic: "项目", content: "实现提醒布局"),
+                                                     JournalEvent(content: "复盘今天的收获")])
+
+            let unfinished = "读书 记到一半\n 临时杂事\n项目 "
+            model.setDraft(id: id, text: unfinished)
+            model.dismissPrompt()
+            let pending = try XCTUnwrap(storage.load().entries.last)
+            XCTAssertTrue(pending.isPending)
+            XCTAssertEqual(pending.text, unfinished)
+            XCTAssertEqual(pending.events, JournalEvents.parse(unfinished))
+            model.openPendingEntry(id)
+            XCTAssertFalse(model.savePrompt(id: id, text: unfinished))
+            XCTAssertEqual(model.promptEntryID, id)
+            XCTAssertEqual(try storage.load().entries.last, pending)
+
+            let completed = "读书 整理了方法部分\n 临时杂事\n项目 修复编译"
+            XCTAssertTrue(model.savePrompt(id: id, text: completed))
+            XCTAssertNil(model.promptEntryID)
+            XCTAssertEqual(model.entries.last?.events, JournalEvents.parse(completed))
+            XCTAssertFalse(model.entries.last?.isPending == true)
+
+            let edited = "Other Walked outside\n读书 补完笔记\n General reflection"
+            XCTAssertTrue(model.saveEditedEntry(id: id, start: at(7, 9, 0), end: at(7, 9, 30), text: edited))
+            let saved = try XCTUnwrap(storage.load().entries.last)
+            XCTAssertEqual(saved.text, edited)
+            XCTAssertEqual(saved.events, [JournalEvent(content: "Walked outside"),
+                                         JournalEvent(topic: "读书", content: "补完笔记"),
+                                         JournalEvent(content: "General reflection")])
+        }
+    }
+
+    func testPreviousEntryUsesTheRemindedIntervalAndKeepsPendingNeighbors() async throws {
+        try await MainActor.run {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("justnow-previous-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let first = JournalEntry(start: at(6, 22, 0), end: at(6, 22, 30), text: "Earlier work", status: .recorded)
+            let previous = JournalEntry(start: at(6, 23, 30), end: at(7, 0, 0), text: "Previous work", status: .recorded)
+            let target = JournalEntry(start: at(7, 0, 0), end: at(7, 0, 30))
+            let pending = JournalEntry(start: at(7, 0, 30), end: at(7, 1, 0))
+            let later = JournalEntry(start: at(7, 1, 30), end: at(7, 2, 0), text: "Later work", status: .recorded)
+            var state = JournalState()
+            state.entries = [later, target, first, pending, previous]
+            try JournalStorage(directory: directory).save(state)
+            let model = AppModel(dataDirectory: directory, trackApplicationUsage: false)
+            model.now = at(8, 12, 0)
+
+            XCTAssertEqual(model.previousEntry(for: target.id)?.id, previous.id)
+            XCTAssertEqual(model.previousEntry(for: target.id)?.text, "Previous work")
+            XCTAssertEqual(model.previousEntry(for: pending.id)?.id, target.id)
+            XCTAssertEqual(model.previousEntry(for: later.id)?.id, pending.id)
+            XCTAssertTrue(model.previousEntry(for: later.id)?.isPending == true)
+            XCTAssertEqual(model.previousEntry(for: later.id)?.text, "")
+            XCTAssertNil(model.previousEntry(for: first.id))
+            XCTAssertNil(model.previousEntry(for: UUID()))
+        }
+    }
+
     func testPreparedUpdateFlushesDraftAndQuitPreservesRecording() async throws {
         try await MainActor.run {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("justnow-update-\(UUID())")

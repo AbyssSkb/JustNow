@@ -11,6 +11,47 @@ public enum AppLanguage: String, Codable, CaseIterable, Sendable {
     }
 }
 
+public struct JournalEvent: Codable, Equatable, Sendable {
+    public var topic: String?
+    public var content: String
+
+    public init(topic: String? = nil, content: String) {
+        self.topic = topic
+        self.content = content
+    }
+}
+
+public enum JournalEvents {
+    public static func parse(_ text: String) -> [JournalEvent] {
+        text.split(whereSeparator: \.isNewline).compactMap { line in
+            guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+            guard line.first?.isWhitespace == false,
+                  let separator = line.firstIndex(where: \.isWhitespace) else {
+                return JournalEvent(content: line.trimmingCharacters(in: .whitespaces))
+            }
+            let topic = String(line[..<separator])
+            return JournalEvent(topic: topic == "其他" || topic.caseInsensitiveCompare("Other") == .orderedSame ? nil : topic,
+                                content: line[separator...].trimmingCharacters(in: .whitespaces))
+        }
+    }
+
+    public static func inputText(for events: [JournalEvent]) -> String {
+        events.map { ($0.topic ?? "") + " " + $0.content }.joined(separator: "\n")
+    }
+
+    public static func legacyInputText(_ text: String) -> String {
+        text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces).isEmpty ? String($0) : " " + $0 }.joined(separator: "\n")
+    }
+
+    fileprivate static func validate(_ events: [JournalEvent], text: String, recorded: Bool) throws {
+        guard events == parse(text) else { throw JournalError.invalidEvents }
+        if recorded && (events.isEmpty || events.contains(where: { $0.content.isEmpty })) {
+            throw JournalError.emptyNote
+        }
+    }
+}
+
 public struct JournalEntry: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var start: Date
@@ -19,10 +60,11 @@ public struct JournalEntry: Identifiable, Codable, Equatable, Sendable {
     public var status: EntryStatus
     public var createdAt: Date
     public var applicationUsage: ApplicationUsageSummary?
+    public var events: [JournalEvent]?
     public var isPending: Bool { status == .pending }
     public var duration: TimeInterval { end.timeIntervalSince(start) }
 
-    public init(id: UUID = UUID(), start: Date, end: Date, text: String = "", status: EntryStatus = .pending, createdAt: Date = Date(), applicationUsage: ApplicationUsageSummary? = nil) {
+    public init(id: UUID = UUID(), start: Date, end: Date, text: String = "", status: EntryStatus = .pending, createdAt: Date = Date(), applicationUsage: ApplicationUsageSummary? = nil, events: [JournalEvent]? = nil) {
         self.id = id
         self.start = start
         self.end = end
@@ -30,6 +72,7 @@ public struct JournalEntry: Identifiable, Codable, Equatable, Sendable {
         self.status = status
         self.createdAt = createdAt
         self.applicationUsage = applicationUsage
+        self.events = events
     }
 }
 
@@ -66,12 +109,14 @@ public struct JournalEditorDraft: Codable, Equatable, Sendable {
     public var start: Date
     public var end: Date
     public var text: String
+    public var usesStructuredEvents: Bool?
 
-    public init(entryID: UUID?, start: Date, end: Date, text: String) {
+    public init(entryID: UUID?, start: Date, end: Date, text: String, usesStructuredEvents: Bool? = nil) {
         self.entryID = entryID
         self.start = start
         self.end = end
         self.text = text
+        self.usesStructuredEvents = usesStructuredEvents
     }
 }
 
@@ -104,6 +149,7 @@ public enum JournalError: LocalizedError, Equatable {
     case entryNotFound
     case noBackup
     case invalidApplicationUsage
+    case invalidEvents
 
     public var errorDescription: String? {
         switch self {
@@ -117,6 +163,7 @@ public enum JournalError: LocalizedError, Equatable {
         case .entryNotFound: return "This entry no longer exists."
         case .noBackup: return "There is no saved backup to restore."
         case .invalidApplicationUsage: return "The saved application usage has invalid times or durations."
+        case .invalidEvents: return "The saved events do not match the entry text."
         }
     }
 }
@@ -238,31 +285,35 @@ public struct JournalState: Codable, Equatable, Sendable {
         return continuation
     }
 
-    public mutating func setDraft(id: UUID, text: String) {
+    public mutating func setDraft(id: UUID, text: String, events: [JournalEvent]? = nil) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].text = text
         entries[index].status = .pending
+        entries[index].events = events
     }
 
-    public mutating func updateEntry(id: UUID, text: String, start: Date? = nil, end: Date? = nil, markRecorded: Bool = true) throws {
+    public mutating func updateEntry(id: UUID, text: String, start: Date? = nil, end: Date? = nil, markRecorded: Bool = true, events: [JournalEvent]? = nil) throws {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { throw JournalError.entryNotFound }
         let newStart = start ?? entries[index].start
         let newEnd = end ?? entries[index].end
         try checkRange(start: newStart, end: newEnd, excluding: id)
-        let note = markRecorded ? text.trimmingCharacters(in: .whitespacesAndNewlines) : text
+        let note = markRecorded && events == nil ? text.trimmingCharacters(in: .whitespacesAndNewlines) : text
         if markRecorded && note.isEmpty { throw JournalError.emptyNote }
+        if let events { try JournalEvents.validate(events, text: note, recorded: markRecorded) }
         entries[index].start = newStart
         entries[index].end = newEnd
         entries[index].text = note
         entries[index].status = markRecorded ? .recorded : .pending
+        entries[index].events = events
     }
 
     @discardableResult
-    public mutating func insertEntry(start: Date, end: Date, text: String) throws -> UUID {
+    public mutating func insertEntry(start: Date, end: Date, text: String, events: [JournalEvent]? = nil) throws -> UUID {
         try checkRange(start: start, end: end)
-        let note = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let note = events == nil ? text.trimmingCharacters(in: .whitespacesAndNewlines) : text
         guard !note.isEmpty else { throw JournalError.emptyNote }
-        let entry = JournalEntry(start: start, end: end, text: note, status: .recorded)
+        if let events { try JournalEvents.validate(events, text: note, recorded: true) }
+        let entry = JournalEntry(start: start, end: end, text: note, status: .recorded, events: events)
         entries.append(entry)
         return entry.id
     }
@@ -279,6 +330,7 @@ public struct JournalState: Codable, Equatable, Sendable {
         for (index, entry) in sorted.enumerated() {
             guard Self.isFinite(entry.start), Self.isFinite(entry.end), Self.isFinite(entry.createdAt), entry.start < entry.end else { throw JournalError.invalidDates }
             if entry.status == .recorded && entry.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { throw JournalError.emptyNote }
+            if let events = entry.events { try JournalEvents.validate(events, text: entry.text, recorded: !entry.isPending) }
             if index > 0 && sorted[index - 1].end > entry.start { throw JournalError.overlappingEntries }
             try entry.applicationUsage?.validate()
         }

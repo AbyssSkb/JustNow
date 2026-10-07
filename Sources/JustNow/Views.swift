@@ -28,6 +28,8 @@ struct MainView: View {
                                     historyControls
                                     daySummary
                                     timeline
+                                case .topics:
+                                    TopicsView(model: model)
                                 case .settings:
                                     SettingsView(model: model, updates: updates)
                                 }
@@ -104,6 +106,7 @@ struct MainView: View {
                 .foregroundStyle(Theme.secondary).padding(.leading, 12).padding(.bottom, 10)
             navigationButton(.today, title: model.text("今日", "Today"), icon: "sun.max")
             navigationButton(.history, title: model.text("时间档案", "Journal"), icon: "clock.arrow.circlepath")
+            navigationButton(.topics, title: model.text("主题", "Topics"), icon: "square.grid.2x2")
             Spacer(minLength: 24)
             if model.isRecording {
                 VStack(alignment: .leading, spacing: 9) {
@@ -164,9 +167,9 @@ struct MainView: View {
     private var header: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(model.selectedSection == .today ? model.text("今日", "Today") : model.selectedSection == .history ? model.text("时间档案", "Your journal") : model.text("设置", "Settings"))
+                Text(sectionTitle)
                     .font(.system(size: 28, weight: .bold, design: .rounded))
-                Text(model.selectedSection == .today ? dateLabel(model.now, model: model) : model.selectedSection == .history ? model.text("回看那些做过的小事。", "The little things that made up your day.") : model.text("按你的节奏，记录你的时间。", "A rhythm that feels right for you."))
+                Text(sectionSubtitle)
                     .font(.system(size: 12)).foregroundStyle(Theme.secondary)
             }
             Spacer()
@@ -182,6 +185,24 @@ struct MainView: View {
         }
         .padding(.horizontal, 32).padding(.top, 35).padding(.bottom, 25)
         .background(Theme.background)
+    }
+
+    private var sectionTitle: String {
+        switch model.selectedSection {
+        case .today: return model.text("今日", "Today")
+        case .history: return model.text("时间档案", "Your journal")
+        case .topics: return model.text("主题", "Topics")
+        case .settings: return model.text("设置", "Settings")
+        }
+    }
+
+    private var sectionSubtitle: String {
+        switch model.selectedSection {
+        case .today: return dateLabel(model.now, model: model)
+        case .history: return model.text("回看那些做过的小事。", "The little things that made up your day.")
+        case .topics: return model.text("全部已保存时段中的主题与具体事件。", "Topics and details across all saved intervals.")
+        case .settings: return model.text("按你的节奏，记录你的时间。", "A rhythm that feels right for you.")
+        }
     }
 
     private var daySummary: some View {
@@ -440,12 +461,9 @@ private struct EntryRow: View {
                             Text(model.text("待补记", "To fill in")).font(.system(size: 11, weight: .medium))
                         }
                         .foregroundStyle(Theme.amber)
-                        Text(entry.text.isEmpty ? model.text("这段时间，你做了什么？", "What did you do during this time?") : entry.text)
-                            .font(.system(size: 13)).foregroundStyle(entry.text.isEmpty ? Theme.secondary : Theme.ink)
-                            .lineLimit(3).lineSpacing(5).multilineTextAlignment(.leading)
+                        entryContent
                     } else {
-                        Text(entry.text).font(.system(size: 13)).foregroundStyle(Theme.ink)
-                            .lineLimit(4).lineSpacing(5).multilineTextAlignment(.leading)
+                        entryContent
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -460,6 +478,44 @@ private struct EntryRow: View {
         }
         .buttonStyle(.plain).onHover { hovering = $0 }
         .help(model.text("点击编辑这段记录", "Click to edit this entry"))
+    }
+
+    @ViewBuilder private var entryContent: some View {
+        if let events = entry.events, !events.isEmpty {
+            JournalEventList(model: model, events: events, maxEvents: 4, lineLimit: 2)
+        } else {
+            Text(entry.text.isEmpty ? model.text("这段时间，你做了什么？", "What did you do during this time?") : entry.text)
+                .font(.system(size: 13)).foregroundStyle(entry.text.isEmpty ? Theme.secondary : Theme.ink)
+                .lineLimit(4).lineSpacing(5).multilineTextAlignment(.leading)
+        }
+    }
+}
+
+struct JournalEventList: View {
+    @ObservedObject var model: AppModel
+    let events: [JournalEvent]
+    var maxEvents: Int? = nil
+    var lineLimit: Int? = nil
+    var fontSize: CGFloat = 13
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(events.prefix(maxEvents ?? events.count).enumerated()), id: \.offset) { _, event in
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    Text("•").foregroundStyle(Theme.secondary)
+                    (Text(event.topic ?? model.text("其他", "Other")).fontWeight(.semibold).foregroundColor(Theme.accent)
+                     + Text("  " + event.content))
+                        .lineLimit(lineLimit).lineSpacing(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if let maxEvents, events.count > maxEvents {
+                Text(model.text("另有 \(events.count - maxEvents) 件事", "\(events.count - maxEvents) more events"))
+                    .font(.system(size: 10)).foregroundStyle(Theme.secondary)
+            }
+        }
+        .font(.system(size: fontSize)).foregroundStyle(Theme.ink)
+        .multilineTextAlignment(.leading)
     }
 }
 
@@ -612,7 +668,7 @@ private struct SettingsView: View {
             HStack {
                 BrandMark(size: 22)
                 Text("JustNow").font(.system(size: 12, weight: .semibold, design: .rounded))
-                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.11")
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.12")
                     .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 Spacer()
                 Text(model.text("用 MIT 许可开源 · 为日常留一点空间", "Open source under MIT · A little room for your day"))
@@ -772,43 +828,52 @@ private struct OnboardingView: View {
 struct PromptView: View {
     @ObservedObject var model: AppModel
     let entryID: UUID
+    var onHeightChange: ((CGFloat) -> Void)?
     @State private var draft: String
     @State private var writing = false
+    @State private var showingPrevious = false
+    @State private var editorHeight: CGFloat = 90
 
-    init(model: AppModel, entryID: UUID) {
+    init(model: AppModel, entryID: UUID, onHeightChange: ((CGFloat) -> Void)? = nil) {
         self.model = model
         self.entryID = entryID
-        _draft = State(initialValue: model.entries.first(where: { $0.id == entryID })?.text ?? "")
+        self.onHeightChange = onHeightChange
+        let entry = model.entries.first { $0.id == entryID }
+        _draft = State(initialValue: entry?.events == nil ? JournalEvents.legacyInputText(entry?.text ?? "") : entry?.text ?? "")
     }
 
     private var entry: JournalEntry? { model.entries.first { $0.id == entryID } }
+    private var previous: JournalEntry? { model.previousEntry(for: entryID) }
+    private var preferredHeight: CGFloat {
+        Self.height(editorHeight: editorHeight, hasPrevious: previous != nil, hasClues: entry?.applicationUsage != nil, hasError: model.errorMessage != nil)
+    }
+
+    static func height(editorHeight: CGFloat = 90, hasPrevious: Bool, hasClues: Bool, hasError: Bool = false) -> CGFloat {
+        min(560, 142 + editorHeight + (hasPrevious ? 85 : 0) + (hasClues ? 50 : 0) + (hasError ? 44 : 0))
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(spacing: 9) {
-                BrandMark(size: 28)
-                Text("JustNow").font(.system(size: 13, weight: .semibold, design: .rounded))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                HStack(spacing: 9) {
+                    BrandMark(size: 26)
+                    Text(model.text("记下刚才", "Capture this moment"))
+                        .font(.system(size: 21, weight: .semibold, design: .rounded))
+                }
                 Spacer()
-                Text(model.text("给刚才留句话", "A few words for just now"))
-                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
-            }
-            VStack(alignment: .leading, spacing: 9) {
-                Text(model.text("刚才，你做了什么？", "What have you been up to?"))
-                    .font(.system(size: 24, weight: .semibold, design: .rounded))
                 if let entry {
-                    HStack(spacing: 8) {
-                        Image(systemName: "clock").font(.system(size: 11))
-                        Text(timeRangeLabel(entry.start, entry.end))
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    }
-                    .foregroundStyle(Theme.secondary)
+                    Text(contextRange(entry))
+                        .font(.system(size: 19, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Theme.secondary)
+                        .lineLimit(1).minimumScaleFactor(0.65)
                 }
             }
+            if let previous { previousReference(previous) }
             if let summary = entry?.applicationUsage {
-                ApplicationRecallView(model: model, summary: summary)
+                ApplicationRecallView(model: model, summary: summary, inline: true)
             }
-            JournalTextEditor(text: $draft, placeholder: model.text("做了什么、想到什么……随意写下来。", "What you did, what crossed your mind… just write."), focused: $writing)
-                .frame(minHeight: 128, maxHeight: .infinity)
+            JournalEventEditor(model: model, text: $draft, focused: $writing, onHeightChange: { editorHeight = $0 })
+                .frame(minHeight: 90, maxHeight: .infinity)
             HStack {
                 if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, model.canDiscardPrompt(entryID) {
                     Button { _ = model.discardPrompt(id: entryID) } label: {
@@ -833,11 +898,86 @@ struct PromptView: View {
                 Text(error).font(.system(size: 11)).foregroundStyle(Theme.amber).lineLimit(3)
             }
         }
-        .padding(.horizontal, 27).padding(.top, 43).padding(.bottom, 27)
+        .padding(.horizontal, 22).padding(.top, 30).padding(.bottom, 20)
         .background(Theme.background).foregroundStyle(Theme.ink).tint(Theme.accent)
+        .ignoresSafeArea(edges: .top)
         .preferredColorScheme(model.preferences.appearance == .system ? nil : model.preferences.appearance == .dark ? .dark : .light)
-        .onAppear { writing = true }
+        .onAppear { writing = true; onHeightChange?(preferredHeight) }
+        .onChange(of: preferredHeight) { _, value in onHeightChange?(value) }
         .onChange(of: draft) { _, value in model.setDraft(id: entryID, text: value) }
+    }
+
+    @ViewBuilder private func previousReference(_ previous: JournalEntry) -> some View {
+        if previous.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            previousSummary(previous)
+        } else {
+            Button { showingPrevious = true } label: { previousSummary(previous) }
+                .buttonStyle(.plain)
+                .help(model.text("查看上一段完整内容", "Read the previous interval in full"))
+                .popover(isPresented: $showingPrevious) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(model.text("上一段的记录", "Previous interval"))
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(contextRange(previous))
+                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.secondary)
+                        ViewThatFits(in: .vertical) {
+                            previousText(previous).fixedSize(horizontal: false, vertical: true)
+                            ScrollView { previousText(previous) }.scrollIndicators(.hidden)
+                        }
+                        .frame(maxHeight: 240, alignment: .topLeading)
+                    }
+                    .padding(18).frame(width: 380)
+                    .foregroundStyle(Theme.ink).background(Theme.background)
+                }
+        }
+    }
+
+    private func previousSummary(_ previous: JournalEntry) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(model.text("上一段", "Previous interval")).font(.system(size: 11, weight: .semibold))
+                Text(contextRange(previous)).font(.system(size: 10, design: .monospaced))
+                if previous.isPending {
+                    Text(model.text("待补记", "Unfinished")).font(.system(size: 10))
+                }
+                Spacer(minLength: 0)
+                if !previous.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                }
+            }
+            .foregroundStyle(Theme.secondary)
+            if let events = previous.events, !events.isEmpty {
+                JournalEventList(model: model, events: events, maxEvents: 1, lineLimit: 1, fontSize: 12)
+            } else {
+                Text(previous.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                     ? model.text("这一段还没有填写。", "This interval has not been written yet.") : previous.text)
+                    .font(.system(size: 12)).lineSpacing(2).lineLimit(2)
+                    .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(12).background(Theme.inset, in: RoundedRectangle(cornerRadius: 11))
+        .contentShape(RoundedRectangle(cornerRadius: 11))
+    }
+
+    @ViewBuilder private func previousText(_ previous: JournalEntry) -> some View {
+        if let events = previous.events, !events.isEmpty {
+            JournalEventList(model: model, events: events).textSelection(.enabled)
+        } else {
+            Text(previous.text).font(.system(size: 13)).lineSpacing(4).textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func contextRange(_ entry: JournalEntry) -> String {
+        let calendar = Calendar.current
+        let date = Date.FormatStyle.dateTime.month(.abbreviated).day()
+            .locale(Locale(identifier: model.text("zh_CN", "en_US")))
+        if !calendar.isDate(entry.start, inSameDayAs: entry.end) {
+            return entry.start.formatted(date) + " " + timeLabel(entry.start) + " – "
+                + entry.end.formatted(date) + " " + timeLabel(entry.end)
+        }
+        let prefix = calendar.isDate(entry.start, inSameDayAs: model.now) ? "" : entry.start.formatted(date) + " "
+        return prefix + timeRangeLabel(entry.start, entry.end)
     }
 }
 
@@ -858,7 +998,9 @@ private struct EntryEditorView: View {
         let initialEnd = request.draft?.end ?? request.entry?.end ?? (Calendar.current.isDateInToday(model.displayDay) ? model.now : Calendar.current.date(bySettingHour: 9, minute: 30, second: 0, of: model.displayDay) ?? model.displayDay)
         _end = State(initialValue: initialEnd)
         _start = State(initialValue: request.draft?.start ?? request.entry?.start ?? initialEnd.addingTimeInterval(-Double(model.preferences.intervalMinutes * 60)))
-        _draft = State(initialValue: request.draft?.text ?? request.entry?.text ?? "")
+        let initialText = request.draft?.text ?? request.entry?.text ?? ""
+        let structured = request.draft.map { $0.usesStructuredEvents == true } ?? (request.entry?.events != nil)
+        _draft = State(initialValue: structured ? initialText : JournalEvents.legacyInputText(initialText))
     }
 
     var body: some View {
@@ -898,8 +1040,10 @@ private struct EntryEditorView: View {
                         .font(.system(size: 10)).foregroundStyle(Theme.secondary)
                 }
             }
-            JournalTextEditor(text: $draft, placeholder: model.text("这段时间，你做了什么？", "What did you do during this time?"), focused: $writing)
-                .frame(height: 180)
+            VStack(alignment: .leading, spacing: 7) {
+                JournalEventEditor(model: model, text: $draft, focused: $writing)
+                    .frame(height: 200)
+            }
             if end <= start {
                 Text(model.text("结束时间需要晚于开始时间。", "The end needs to be after the start."))
                     .font(.system(size: 11)).foregroundStyle(Theme.amber)
@@ -951,7 +1095,7 @@ private struct EntryEditorView: View {
 
     private func preserveDraft() {
         guard !savedOrDeleted else { return }
-        model.editorDraft = JournalEditorDraft(entryID: request.entry?.id, start: start, end: end, text: draft)
+        model.editorDraft = JournalEditorDraft(entryID: request.entry?.id, start: start, end: end, text: draft, usesStructuredEvents: true)
         if let entry = request.entry, entry.isPending { model.setDraft(id: entry.id, text: draft) }
     }
 }

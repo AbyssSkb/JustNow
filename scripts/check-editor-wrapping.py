@@ -35,6 +35,8 @@ for text in [String(repeating: "整理今天的想法，检查记录输入体验
     settle()
     let scroll = descendant(host, NSScrollView.self)!
     let editor = scroll.documentView as! NSTextView
+    assert(editor.delegate!.textView?(editor, doCommandBy: #selector(NSTextView.insertNewline(_:))) == false,
+           "A plain editor intercepted its native newline")
     let layout = editor.layoutManager!, container = editor.textContainer!
     func lines() -> Int {
         layout.ensureLayout(for: container)
@@ -60,8 +62,9 @@ for text in [String(repeating: "整理今天的想法，检查记录输入体验
         assert(scroll.documentVisibleRect.minY > 0 && scroll.documentVisibleRect.minX == 0, "Long text cannot scroll vertically")
     }
     editor.undoManager!.beginUndoGrouping()
-    editor.insertText("replacement", replacementRange: selected)
+    editor.insertText("replacement\nsecond", replacementRange: selected)
     editor.undoManager!.endUndoGrouping()
+    assert(editor.string.contains("replacement\nsecond"), "Plain editor changed multiline inserted text")
     editor.undoManager!.undo()
     assert(editor.string == text && editor.selectedRange() == selected, "Undo did not restore text and selection")
     editor.setMarkedText("拼音输入", selectedRange: NSRange(location: 0, length: 4), replacementRange: selected)
@@ -72,7 +75,56 @@ for text in [String(repeating: "整理今天的想法，检查记录输入体验
     assert(editor.hasMarkedText() && editor.markedRange() == marked, "Resize interrupted input composition")
     editor.unmarkText()
 }
-print("PASS: Chinese, English, URLs, newlines, resize, scrolling, selection, undo and composition")
+var nextEvents = 0
+var saves = 0
+let host = NSHostingView(rootView: VStack {
+    JournalTextEditor(text: .constant("Current item"), placeholder: "", focused: .constant(false), onNextEvent: { nextEvents += 1 })
+    Button("Save") { saves += 1 }.keyboardShortcut(.return, modifiers: .command)
+})
+let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 180),
+                      styleMask: [.borderless], backing: .buffered, defer: false)
+window.contentView = host
+for _ in 0..<5 {
+    host.layoutSubtreeIfNeeded()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+}
+let editor = descendant(host, NSScrollView.self)!.documentView as! NSTextView
+let delegate = editor.delegate!
+let newline = #selector(NSTextView.insertNewline(_:))
+let fieldNewline = #selector(NSTextView.insertNewlineIgnoringFieldEditor(_:))
+assert(delegate.textView?(editor, doCommandBy: newline) == true && nextEvents == 1, "Enter did not request a new event")
+assert(editor.string == "Current item", "Enter changed the current event text")
+assert(delegate.textView?(editor, doCommandBy: fieldNewline) == true && nextEvents == 2, "Alternate Enter did not request a new event")
+editor.setMarkedText("拼音输入", selectedRange: NSRange(location: 0, length: 4), replacementRange: NSRange(location: 0, length: 0))
+assert(delegate.textView?(editor, doCommandBy: newline) == false && nextEvents == 2, "IME confirmation created a new event")
+assert(editor.hasMarkedText(), "Enter interception interrupted input composition")
+editor.unmarkText()
+let commandEnter = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+    timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "\r",
+    charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36)!
+assert(window.performKeyEquivalent(with: commandEnter) && saves == 1 && nextEvents == 2,
+       "Command-Enter did not remain available to the SwiftUI save shortcut")
+
+let pasteHost = NSHostingView(rootView: JournalTextEditor(text: .constant(""), placeholder: "", focused: .constant(false), onNextEvent: {}))
+let pasteWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 180),
+                           styleMask: [.borderless], backing: .buffered, defer: false)
+pasteWindow.contentView = pasteHost
+for _ in 0..<5 {
+    pasteHost.layoutSubtreeIfNeeded()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+}
+let pasteEditor = descendant(pasteHost, NSScrollView.self)!.documentView as! NSTextView
+for value: Any in ["a\nb", NSAttributedString(string: "a\r\nb\rc\u{2028}d")] {
+    pasteEditor.undoManager!.beginUndoGrouping()
+    pasteEditor.insertText(value, replacementRange: NSRange(location: 0, length: 0))
+    pasteEditor.undoManager!.endUndoGrouping()
+    let expected = value is String ? "a b" : "a b c d"
+    assert(pasteEditor.string == expected, "Multiline paste was not normalized before native insertion")
+    assert(pasteEditor.selectedRange() == NSRange(location: expected.utf16.count, length: 0), "Paste moved the caret incorrectly")
+    pasteEditor.undoManager!.undo()
+    assert(pasteEditor.string.isEmpty, "Undo did not restore the original event after multiline paste")
+}
+print("PASS: wrapping, resize, scroll, selection, undo, IME, Enter/Command-Enter and multiline paste insertion undo")
 '''
 
 with tempfile.TemporaryDirectory(prefix="justnow-editor-check-") as directory:

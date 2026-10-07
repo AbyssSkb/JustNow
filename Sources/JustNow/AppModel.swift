@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 import JustNowCore
 
 enum AppSection: String, CaseIterable {
-    case today, history, settings
+    case today, history, topics, settings
 }
 
 struct EntryEditorRequest: Identifiable {
@@ -58,7 +58,7 @@ final class AppModel: ObservableObject {
     private var updating = false
 
     init(isDemo: Bool = false, showOnboarding: Bool = false, dataDirectory: URL? = nil,
-         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.11",
+         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.12",
          trackApplicationUsage: Bool = true, applicationTracker: ApplicationUsageTracker? = nil,
          idleSeconds: @escaping () -> TimeInterval = {
              CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!)
@@ -136,6 +136,10 @@ final class AppModel: ObservableObject {
 
     var preferences: Preferences { journal.preferences }
     var entries: [JournalEntry] { journal.entries }
+    func previousEntry(for entryID: UUID) -> JournalEntry? {
+        guard let entry = entries.first(where: { $0.id == entryID }) else { return nil }
+        return entries.filter { $0.id != entryID && $0.end <= entry.start }.max { $0.end < $1.end }
+    }
     var isRecording: Bool { journal.isRecording && !isPaused }
     var isPaused: Bool { journal.pauseDate != nil }
     var pauseDate: Date? { journal.pauseDate }
@@ -269,7 +273,7 @@ final class AppModel: ObservableObject {
     }
 
     func savePrompt(id: UUID, text: String) -> Bool {
-        guard commit({ applyDrafts(to: &$0); try $0.updateEntry(id: id, text: text) }) else { return false }
+        guard commit({ applyDrafts(to: &$0); try $0.updateEntry(id: id, text: text, events: JournalEvents.parse(text)) }) else { return false }
         drafts.removeValue(forKey: id)
         draftSave?.cancel()
         promptQueue.removeAll()
@@ -348,8 +352,8 @@ final class AppModel: ObservableObject {
         }
         let result = commit { state in
             applyDrafts(to: &state)
-            if let id { try state.updateEntry(id: id, text: text, start: start, end: end) }
-            else { _ = try state.insertEntry(start: start, end: end, text: text) }
+            if let id { try state.updateEntry(id: id, text: text, start: start, end: end, events: JournalEvents.parse(text)) }
+            else { _ = try state.insertEntry(start: start, end: end, text: text, events: JournalEvents.parse(text)) }
             state.editorDraft = nil
         }
         if result {
@@ -593,7 +597,7 @@ final class AppModel: ObservableObject {
     }
 
     private func applyDrafts(to state: inout JournalState) {
-        for (id, text) in drafts { state.setDraft(id: id, text: text) }
+        for (id, text) in drafts { state.setDraft(id: id, text: text, events: JournalEvents.parse(text)) }
         state.editorDraft = editorDraft
     }
 
@@ -625,18 +629,22 @@ final class AppModel: ObservableObject {
 
     private func report(_ error: Error) {
         var detail = error.localizedDescription
+        if error as? JournalError == .emptyNote {
+            detail = text("每一项都需要填写具体内容后再保存。", "Add details to each event before saving.")
+        }
         if preferences.language.usesChinese, let journalError = error as? JournalError {
             switch journalError {
             case .unsupportedVersion(let version): detail = "这份日志的格式版本（\(version)）暂不支持。"
             case .invalidInterval: detail = "提醒间隔需要在 1 到 240 分钟之间。"
             case .invalidDates: detail = "结束时间需要晚于开始时间。"
-            case .emptyNote: detail = "请先写下这段时间做了什么。"
+            case .emptyNote: detail = "每一项都需要填写具体内容后再保存。"
             case .duplicateID: detail = "日志中有重复的记录标识，请从备份恢复。"
             case .overlappingEntries: detail = "这段时间与已有记录重叠，请调整开始或结束时间。"
             case .activeSessionConflict: detail = "这段时间正在记录中，请结束记录后再补记。"
             case .entryNotFound: detail = "这条记录已不存在。"
             case .noBackup: detail = "还没有可恢复的备份。"
             case .invalidApplicationUsage: detail = "保存的应用使用时间无效，请从备份恢复。"
+            case .invalidEvents: detail = "保存的事项与记录文本不一致，请从备份恢复。"
             }
         }
         errorMessage = text("操作未完成，已有记录已保留。", "The operation could not finish. Existing records are preserved.") + "\n" + detail

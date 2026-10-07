@@ -6,10 +6,54 @@ struct ApplicationRecallView: View {
     @ObservedObject var model: AppModel
     let summary: ApplicationUsageSummary
     var compact = false
+    var inline = false
     @State private var showingAll = false
     @MainActor private static var icons: [String: NSImage] = [:]
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        if inline { inlineRecall }
+        else { expandedRecall }
+    }
+
+    private var inlineRecall: some View {
+        HStack(spacing: 10) {
+            Text(model.text("回忆线索", "A few clues"))
+                .font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.secondary)
+                .fixedSize()
+            if summary.applications.isEmpty {
+                Text(model.text("暂无应用线索", "No app clues"))
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary).lineLimit(1)
+            } else {
+                ForEach(Array(summary.applications.prefix(3).enumerated()), id: \.offset) { _, application in
+                    HStack(spacing: 4) {
+                        applicationIcon(application).frame(width: 18, height: 18)
+                        Text(share(application.seconds))
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .fixedSize()
+                    .help("\(application.name) · \(elapsed(application.seconds)) · \(share(application.seconds))")
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(application.name), \(elapsed(application.seconds)), \(share(application.seconds))")
+                }
+            }
+            Spacer(minLength: 0)
+            Button { showingAll = true } label: {
+                HStack(spacing: 4) {
+                    Text(model.text("全部", "All"))
+                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                }
+                .font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.accent)
+                .frame(minWidth: 50, minHeight: 40).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(model.text("查看全部应用线索", "View all app clues"))
+            .popover(isPresented: $showingAll) { allApplications }
+        }
+        .frame(minHeight: 40)
+    }
+
+    private var expandedRecall: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 7) {
                 Image(systemName: "rectangle.on.rectangle").foregroundStyle(Theme.accent)
@@ -63,10 +107,7 @@ struct ApplicationRecallView: View {
 
     private func applicationRow(_ application: ApplicationUsage) -> some View {
         HStack(spacing: 8) {
-            Group {
-                if let icon = icon(for: application) { Image(nsImage: icon).resizable() }
-                else { Image(systemName: "app").resizable().foregroundStyle(Theme.accent) }
-            }
+            applicationIcon(application)
             .frame(width: 19, height: 19)
             Text(application.name).font(.system(size: 11, weight: .medium))
                 .lineLimit(1).help(application.name)
@@ -74,6 +115,13 @@ struct ApplicationRecallView: View {
             Text(elapsed(application.seconds)).font(.system(size: 10)).foregroundStyle(Theme.secondary)
             Text(share(application.seconds)).font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(Theme.accent).frame(width: 35, alignment: .trailing)
+        }
+    }
+
+    private func applicationIcon(_ application: ApplicationUsage) -> some View {
+        Group {
+            if let icon = icon(for: application) { Image(nsImage: icon).resizable() }
+            else { Image(systemName: "app").resizable().foregroundStyle(Theme.accent) }
         }
     }
 

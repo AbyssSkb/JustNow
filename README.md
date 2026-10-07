@@ -6,7 +6,7 @@
 
 **刚才这半小时，你做了什么？**
 
-JustNow 是一个原生 macOS 时间日志。默认随应用启动记录，每隔一段时间弹出一个小窗口，写一句话，继续手头的事。无需提前维护 Project / Task；记录时的应用摘要可以帮你回忆，内容由你自己填写。
+JustNow 是一个原生 macOS 时间日志。默认随应用启动记录，每隔一段时间弹出一个小窗口，逐项写下刚才做的事，继续手头的工作。主题可以直接输入，无需提前维护 Project / Task；上一时段和应用摘要可以帮你回忆。
 
 免费开源 · 本地存储 · 无账号 · macOS 14+ · Apple Silicon 与 Intel
 
@@ -35,11 +35,12 @@ JustNow 是一个原生 macOS 时间日志。默认随应用启动记录，每�
 
 - **启动即记录，随时能停止。** 默认每次启动自动开始，首次使用完成引导后开始；可在设置中关闭。提醒默认 30 分钟一次，间隔可调。
 - **离开时暂停，回来时确认。** 睡眠、屏幕睡眠、切换用户或连续 30 分钟无键鼠操作时暂停；回来后选择跳过或保留这段时间。
-- **直接写刚才做了什么。** 每段记录包含起止时间与自由文字，长文本自动换行，支持多行。
+- **逐项写刚才做了什么。** 每项是一件事，主题与具体内容分别输入；主题留空归入「其他」，长文本自动换行。
+- **按主题回顾。** 从「主题」查看全部已保存事件，统计事件数量与涉及时段数；同一主题的大小写写法会合并。
 - **时间线与回顾。** 今日最新片段在最上面，保存后立即显示，跨午夜自动更新日期；可以按日期查看、搜索、修改历史记录，也可以手动补记。
 - **漏填也能补。** 点「稍后」保留待填写时间段；不需要记录的空白片段可以直接丢弃。
 - **草稿自动保存。** 提醒文字保留在待补记里，新建和修改记录的编辑草稿会在重新打开应用时恢复。
-- **应用回忆线索。** 记录时保存应用处于前台的停留时间，提醒和后续编辑都能查看这一段的应用摘要。
+- **紧凑提醒与回忆线索。** 窗口从单项所需的最小高度开始，随事件数量和文本折行增高，到上限后在内部滚动；标题左侧贴合图标，右侧以更大字号显示起止时间，不显示操作提示。上方显示只读上一时段，长内容可展开；三个应用线索横向展示，全部详情与后续编辑中的摘要也保留。
 - **本地保存与导出。** JSON 日志自动保存，保留上一次成功保存的备份，支持 CSV / JSON 导出。
 - **随时从菜单栏操作。** 查看状态、打开日志、开始或结束记录。
 - **清楚的选择控件。** 日期与时间使用专用弹层，小时和分钟分开选择；外观和中英文语言选项在设置中并排展示。
@@ -73,13 +74,29 @@ open dist/JustNow.app
 ## 怎么记录
 
 1. 打开 JustNow，完成首次引导后自动开始；关闭启动记录设置后可点击「开始记录」。
-2. 到时间后，弹窗显示刚结束的时间段。输入文字，点击保存。
+2. 到时间后，弹窗显示刚结束的时间段，初始有一项事件。分别填写主题与具体内容，主题框中按 Space 跳到内容，按 Enter 新增一项，点击保存或按 Command + Return 提交。
 3. 忙的时候可以点「稍后」，之后从时间线补写。
 4. 工作告一段落，点击「停止记录」；不足一个间隔的最后一段也可以填写。如果刚开始就停止、这段没有需要记的内容，可以在空白提醒里点击「不记录这段」。
 
 计时从本轮开始的时刻计算，而不是对齐钟表刻度。例如 09:07 开始、间隔 30 分钟，第一段是 09:07–09:37，第二段是 09:37–10:07。**填写和保存不会推迟下一次提醒**。更改间隔对下一次开始记录生效。
 
 应用退出后再次启动时，默认开始一轮新的记录，可以在设置中关闭；手动停止后只重新打开已有窗口，不会重新开始。普通退出会保存最后一段，异常退出则按最近保存的状态恢复，避免自动补计整个停机时段。
+
+### 事件与主题
+
+每项事件都有独立的「主题」和「具体内容」输入框，主题无需提前创建。例如：
+
+| 主题 | 具体内容 |
+| --- | --- |
+| JustNow | 改进提醒弹窗 |
+| 阅读 | 看完文章并整理笔记 |
+| （留空） | 散步后休息 |
+
+主题留空时归入「其他」，可以直接填写内容。初始显示一项事件，主题框中按 Space 跳到内容，按 Enter 新增一项，按 Command + Return 保存。保存后以事件列表展示。
+
+「主题」包含所有已保存的结构化事件，待补记暂不计入。一个时段可以有多个主题；同一主题在一个时段中的多件事分别计入事件数，涉及时段只计一次。大小写不同的同一主题会合并，不推测每个主题花了多长时间。
+
+旧版本的纯文字记录保持原样，不自动猜主题或加入主题统计。编辑时默认把每行归入「其他」，需要分类时可以填写相应的主题再保存。JSON 导出包含事件与主题，CSV 保留原始多行文字及原有字段。
 
 ### 离开与回来
 
@@ -89,7 +106,7 @@ Mac 进入睡眠、屏幕睡眠或切换到其他用户会话时暂停。默认�
 
 ### 草稿与回忆线索
 
-提醒中的文字会自动保存到对应的待补记记录，普通启动后可以从待补记继续填写。新建或修改记录时，文字、日期和时间会作为编辑草稿自动保存；重新打开应用会恢复编辑窗口。普通退出前会立即保存，异常退出后恢复最近一次成功保存的草稿。点击「保存记录」才提交对已完成记录的修改；「取消」会丢弃编辑草稿，待补记文字此前已自动保存的部分仍保留。
+提醒中的内容会自动保存到对应的待补记记录，普通启动后可以从待补记继续填写。新建或修改记录时，内容、主题、日期和时间会作为编辑草稿自动保存；重新打开应用会恢复编辑窗口。普通退出前会立即保存，异常退出后恢复最近一次成功保存的草稿。点击「保存记录」才提交对已完成记录的修改；「取消」会丢弃编辑草稿，待补记内容此前已自动保存的部分仍保留。
 
 「应用使用线索」默认开启，可在设置中关闭。它只在正在记录的会话内采集前台应用的名称、应用标识与停留时间，暂停和停止时不采集。摘要按每段记录保存，提醒弹窗与之后的记录编辑都能查看。占比按整个采集时段计算，无法观测的部分单列为「未统计」，不会把已知应用凑成 100%，也不会自动替你写记录。
 
@@ -172,6 +189,9 @@ JustNow is a native, local-first activity journal for macOS 14+. Recording start
 
 - Adjustable intervals; saving an entry does not reset the timer. Launch recording is enabled by default, begins after first-run onboarding, and can be disabled. Reopening an existing window after a manual stop does not restart recording.
 - Custom date and time popovers with separate hour and minute selection; appearance and language options displayed directly in Settings.
+- Each event has separate native topic and content fields, starting with one item. Leave the topic empty for Other; topics need no advance setup. Space moves from topic to content, Enter adds an item, and Command + Return saves. Saved events appear as a list.
+- Topics groups all saved structured events, merges case variants, and counts events and distinct intervals. Pending entries and untouched legacy text are excluded; editing legacy text defaults to Other rather than guessing its first word as a topic.
+- Compact reminders show the previous interval read-only with expandable long text, followed by three horizontal app clues and access to all details.
 - Free text wraps automatically. Today shows new entries immediately, newest first, and follows the current date across midnight. Browse daily history, search, edit, backfill, and return to pending entries when you choose Later.
 - Reminder text is saved with pending entries. Editor drafts, including dates and times, recover on relaunch; an unexpected exit restores the last successful autosave. Cancelling discards the editor draft while previously saved pending text remains.
 - Optional foreground-app clues are enabled by default and collected only during active recording sessions. App names, bundle identifiers and durations stay local with each interval and remain available when editing later. Unobserved time is shown separately; clues do not write your entry for you.
