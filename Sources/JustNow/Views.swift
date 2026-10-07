@@ -4,6 +4,7 @@ import JustNowCore
 
 struct MainView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var updates: UpdateController
     @State private var hoveredSection: AppSection?
     @FocusState private var focusedSection: AppSection?
     @FocusState private var searching: Bool
@@ -28,7 +29,7 @@ struct MainView: View {
                                     daySummary
                                     timeline
                                 case .settings:
-                                    SettingsView(model: model)
+                                    SettingsView(model: model, updates: updates)
                                 }
                             }
                             .padding(32)
@@ -399,6 +400,7 @@ private struct EntryRow: View {
 
 private struct SettingsView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var updates: UpdateController
     @State private var intervalText = ""
     @State private var intervalError: String?
     @FocusState private var editingInterval: Bool
@@ -508,10 +510,32 @@ private struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .journalCard()
+            VStack(alignment: .leading, spacing: 18) {
+                sectionHeading(model.text("版本与更新", "App updates"), icon: "arrow.triangle.2.circlepath")
+                HStack(spacing: 20) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(model.text("更新时继续记录", "Keep recording through updates"))
+                            .font(.system(size: 13, weight: .medium))
+                        Text(model.text("安装新版后，自动接着当前时段记录，保留未写完的草稿。", "After installing, your current session and unfinished drafts continue automatically."))
+                            .font(.system(size: 11)).foregroundStyle(Theme.secondary).lineSpacing(3)
+                    }
+                    Spacer(minLength: 0)
+                    Button { updates.checkForUpdates() } label: {
+                        Text(model.text("检查更新", "Check for updates")).actionLabel(compact: true)
+                    }
+                    .buttonStyle(ActionButtonStyle(primary: false, compact: true))
+                    .disabled(!updates.canCheckForUpdates)
+                }
+                if !updates.isConfigured {
+                    Text(model.text("更新通道尚未开放。", "The update channel is not available yet."))
+                        .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                }
+            }
+            .journalCard()
             HStack {
                 BrandMark(size: 22)
                 Text("JustNow").font(.system(size: 12, weight: .semibold, design: .rounded))
-                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.7")
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.8")
                     .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 Spacer()
                 Text(model.text("用 MIT 许可开源 · 为日常留一点空间", "Open source under MIT · A little room for your day"))
@@ -746,10 +770,10 @@ private struct EntryEditorView: View {
     init(model: AppModel, request: EntryEditorRequest) {
         self.model = model
         self.request = request
-        let initialEnd = request.entry?.end ?? (Calendar.current.isDateInToday(model.displayDay) ? model.now : Calendar.current.date(bySettingHour: 9, minute: 30, second: 0, of: model.displayDay) ?? model.displayDay)
+        let initialEnd = request.draft?.end ?? request.entry?.end ?? (Calendar.current.isDateInToday(model.displayDay) ? model.now : Calendar.current.date(bySettingHour: 9, minute: 30, second: 0, of: model.displayDay) ?? model.displayDay)
         _end = State(initialValue: initialEnd)
-        _start = State(initialValue: request.entry?.start ?? initialEnd.addingTimeInterval(-Double(model.preferences.intervalMinutes * 60)))
-        _draft = State(initialValue: request.entry?.text ?? "")
+        _start = State(initialValue: request.draft?.start ?? request.entry?.start ?? initialEnd.addingTimeInterval(-Double(model.preferences.intervalMinutes * 60)))
+        _draft = State(initialValue: request.draft?.text ?? request.entry?.text ?? "")
     }
 
     var body: some View {
@@ -812,9 +836,11 @@ private struct EntryEditorView: View {
         }
         .padding(30).frame(width: 510)
         .background(Theme.background).foregroundStyle(Theme.ink).tint(Theme.accent)
-        .onAppear { writing = true }
+        .onAppear { writing = true; preserveDraft() }
         .onChange(of: draft) { _, _ in preserveDraft() }
-        .onDisappear { preserveDraft() }
+        .onChange(of: start) { _, _ in preserveDraft() }
+        .onChange(of: end) { _, _ in preserveDraft() }
+        .onDisappear { preserveDraft(); model.editorDraft = nil }
         .confirmationDialog(model.text("删除这段记录？", "Delete this entry?"), isPresented: $confirmDelete, titleVisibility: .visible) {
             Button(model.text("删除", "Delete"), role: .destructive) {
                 if let entry = request.entry {
@@ -830,7 +856,9 @@ private struct EntryEditorView: View {
     }
 
     private func preserveDraft() {
-        if !savedOrDeleted, let entry = request.entry, entry.isPending { model.setDraft(id: entry.id, text: draft) }
+        guard !savedOrDeleted else { return }
+        model.editorDraft = JournalEditorDraft(entryID: request.entry?.id, start: start, end: end, text: draft)
+        if let entry = request.entry, entry.isPending { model.setDraft(id: entry.id, text: draft) }
     }
 }
 

@@ -14,7 +14,7 @@ VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/
 ARCHIVE="$ROOT/dist/JustNow-$VERSION-universal"
 STATUS_FILE="$(mktemp "$ROOT/dist/.notary-status.XXXXXX")"
 trap 'rm -f "$STATUS_FILE"' EXIT
-codesign --verify --strict --verbose=2 "$APP"
+codesign --verify --deep --strict --verbose=2 "$APP"
 SIGNATURE="$(codesign --display --verbose=4 "$APP" 2>&1)"
 if [[ "$SIGNATURE" != *"Authority=$SIGNING_IDENTITY"* || "$SIGNATURE" != *"runtime"* || "$SIGNATURE" != *"Timestamp="* ]]; then
   printf 'Rebuild with SIGNING_IDENTITY before notarizing: Developer ID, hardened runtime and timestamp are required.\n' >&2

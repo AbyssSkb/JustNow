@@ -50,6 +50,66 @@ final class JournalTests: XCTestCase {
         try state.validate()
     }
 
+    func testUpdateContinuationKeepsTheSessionAnchorAndIsConsumedOnce() throws {
+        var state = JournalState()
+        state.start(at: at(0))
+        state.advance(to: at(29))
+        let draft = JournalEditorDraft(entryID: nil, start: at(-30), end: at(-10), text: "Unsubmitted\nnew note")
+        state.updateContinuation = AppUpdateContinuation(preparedAt: at(29), sourceVersion: "0.1.8", targetVersion: "0.1.9", editorDraft: draft)
+        let continuation = try XCTUnwrap(state.consumeUpdateContinuation(at: at(31), appVersion: "0.1.9"))
+        XCTAssertEqual(continuation.editorDraft, draft)
+        XCTAssertEqual(state.session?.startedAt, at(0))
+        XCTAssertEqual(state.session?.segmentStartedAt, at(30))
+        XCTAssertEqual(state.session?.intervalMinutes, 30)
+        XCTAssertEqual(state.entries.map(\.start), [at(0)])
+        XCTAssertEqual(state.entries.map(\.end), [at(30)])
+        XCTAssertTrue(state.advance(to: at(31)).isEmpty)
+        XCTAssertNil(state.updateContinuation)
+        XCTAssertNil(state.consumeUpdateContinuation(at: at(32), appVersion: "0.1.9"))
+        XCTAssertEqual(state.recoverInterruptedSession().count, 1)
+        XCTAssertEqual(state.entries.last?.end, at(31))
+        XCTAssertFalse(state.isRecording)
+        try state.validate()
+    }
+
+    func testInvalidUpdateContinuationsRecoverOnlyToTheSavedHeartbeat() throws {
+        let cases: [(Date, Date, String)] = [
+            (at(20), at(26), "0.1.9"),
+            (at(20), at(19), "0.1.9"),
+            (at(20), at(21), "unrelated"),
+            (Date(timeIntervalSinceReferenceDate: .infinity), at(21), "0.1.9")
+        ]
+        for (preparedAt, launchAt, version) in cases {
+            var state = JournalState()
+            state.start(at: at(0))
+            state.advance(to: at(20))
+            state.updateContinuation = AppUpdateContinuation(preparedAt: preparedAt, sourceVersion: "0.1.8", targetVersion: "0.1.9")
+            XCTAssertNil(state.consumeUpdateContinuation(at: launchAt, appVersion: version))
+            XCTAssertNil(state.updateContinuation)
+            _ = state.recoverInterruptedSession()
+            XCTAssertFalse(state.isRecording)
+            XCTAssertEqual(state.entries.map(\.end), [at(20)])
+            try state.validate()
+        }
+    }
+
+    func testRollbackAndIdleUpdateDoNotStartAnIdleSession() throws {
+        var idle = JournalState()
+        idle.updateContinuation = AppUpdateContinuation(preparedAt: at(20), sourceVersion: "0.1.8", targetVersion: "0.1.9")
+        XCTAssertNotNil(idle.consumeUpdateContinuation(at: at(21), appVersion: "0.1.8"))
+        XCTAssertFalse(idle.isRecording)
+        XCTAssertTrue(idle.entries.isEmpty)
+
+        var recording = JournalState()
+        recording.start(at: at(0))
+        recording.advance(to: at(20))
+        recording.updateContinuation = AppUpdateContinuation(preparedAt: at(20), sourceVersion: "0.1.8", targetVersion: "0.1.9")
+        XCTAssertNotNil(recording.consumeUpdateContinuation(at: at(21), appVersion: "0.1.8"))
+        XCTAssertEqual(recording.session?.startedAt, at(0))
+        recording.recoverInterruptedSession()
+        XCTAssertNil(recording.updateContinuation)
+    }
+
     func testIntervalChangesApplyToTheNextSession() throws {
         var state = JournalState()
         state.start(at: at(0))

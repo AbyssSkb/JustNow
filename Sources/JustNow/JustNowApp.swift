@@ -50,8 +50,9 @@ enum JustNowApp {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate, NSMenuItemValidation {
     private var model: AppModel!
+    private var updates: UpdateController!
     private var mainWindow: NSWindow!
     private var reminderPanel: NSPanel?
     private var statusItem: NSStatusItem!
@@ -61,6 +62,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func applicationDidFinishLaunching(_ notification: Notification) {
         let arguments = ProcessInfo.processInfo.arguments
         model = AppModel(isDemo: arguments.contains("--demo"), showOnboarding: arguments.contains("--onboarding"))
+        updates = UpdateController(enabled: !model.isDemo)
+        updates.onBeforeRelaunch = { [weak self] targetVersion in
+            guard let self else { return false }
+            let sourceVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.8"
+            return self.model.prepareForUpdate(sourceVersion: sourceVersion, targetVersion: targetVersion)
+        }
+        updates.onCancel = { [weak self] in _ = self?.model.cancelPreparedUpdate() }
+        updates.onError = { [weak self] detail in
+            guard let self else { return }
+            self.model.errorMessage = self.model.text("更新未完成：", "Update could not finish: ") + detail
+        }
         model.onShowMainWindow = { [weak self] in self?.showMainWindow() }
         createMainMenu()
         createMainWindow()
@@ -80,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             MainActor.assumeIsolated { self?.model.handleWake() }
         })
         showMainWindow()
+        updates.start()
         if arguments.contains("--show-reminder") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in self?.model.showDemoReminder() }
         }
@@ -97,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         mainWindow.minSize = NSSize(width: 900, height: 650)
         mainWindow.backgroundColor = .windowBackgroundColor
         mainWindow.delegate = self
-        mainWindow.contentView = NSHostingView(rootView: MainView(model: model))
+        mainWindow.contentView = NSHostingView(rootView: MainView(model: model, updates: updates))
         mainWindow.setFrameAutosaveName("JustNowMainWindow")
         mainWindow.center()
     }
@@ -150,6 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard model != nil else { return .terminateNow }
         if model.prepareForQuit() { return .terminateNow }
+        updates.cancelPreparedUpdate()
         showMainWindow()
         return .terminateCancel
     }
@@ -213,13 +227,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     @objc private func openSettings() { model.showSettings() }
+    @objc private func checkForUpdates() { updates.checkForUpdates() }
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(checkForUpdates) { return updates?.canCheckForUpdates == true }
+        return true
+    }
     @objc private func quit() { model.quit() }
     @objc private func addEntry() { model.showMainWindow(); model.openEditor() }
     @objc private func exportJournal() { model.exportCSV() }
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "JustNow · 刚才",
-            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.7",
+            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.8",
             .credits: NSAttributedString(string: model.text("一句话，留下刚才。\n免费开源 · MIT", "A small pause. A clearer day.\nFree & open source · MIT"))
         ])
     }
@@ -232,6 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         addMenuItem(to: appMenu, title: model.text("关于 JustNow", "About JustNow"), action: #selector(showAbout))
         appMenu.addItem(.separator())
         addMenuItem(to: appMenu, title: model.text("设置…", "Settings…"), action: #selector(openSettings), key: ",")
+        addMenuItem(to: appMenu, title: model.text("检查更新…", "Check for Updates…"), action: #selector(checkForUpdates))
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: model.text("隐藏 JustNow", "Hide JustNow"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: model.text("显示全部", "Show All"), action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")

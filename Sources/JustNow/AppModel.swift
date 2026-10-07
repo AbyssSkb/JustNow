@@ -11,6 +11,7 @@ enum AppSection: String, CaseIterable {
 struct EntryEditorRequest: Identifiable {
     let id = UUID()
     var entry: JournalEntry?
+    var draft: JournalEditorDraft? = nil
 }
 
 @MainActor
@@ -28,6 +29,7 @@ final class AppModel: ObservableObject {
     @Published var statusMessage: String?
     @Published var hasStorageError = false
     @Published var presentedEditor: EntryEditorRequest?
+    @Published var editorDraft: JournalEditorDraft?
     @Published var promptEntryID: UUID?
     @Published private(set) var launchAtLogin = false
 
@@ -42,22 +44,41 @@ final class AppModel: ObservableObject {
     private var drafts: [UUID: String] = [:]
     private var draftSave: DispatchWorkItem?
     private var resumeAfterWake = false
+    private var updating = false
 
-    init(isDemo: Bool = false, showOnboarding: Bool = false) {
+    init(isDemo: Bool = false, showOnboarding: Bool = false, dataDirectory: URL? = nil,
+         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.8") {
         self.isDemo = isDemo
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        dataDirectory = isDemo
+        self.dataDirectory = dataDirectory ?? (isDemo
             ? FileManager.default.temporaryDirectory.appendingPathComponent("JustNow-Preview-\(UUID().uuidString)")
-            : base.appendingPathComponent("JustNow", isDirectory: true)
-        storage = JournalStorage(directory: dataDirectory)
+            : base.appendingPathComponent("JustNow", isDirectory: true))
+        storage = JournalStorage(directory: self.dataDirectory)
         var loaded = JournalState()
         var failure: String?
+        var continuation: AppUpdateContinuation?
+        var due: [UUID] = []
+        let launchDate = Date()
         do {
             loaded = isDemo ? Self.demoJournal(showOnboarding: showOnboarding) : try storage.load()
             if !isDemo {
+                let previous = loaded
                 let wasRecording = loaded.isRecording
-                _ = loaded.recoverInterruptedSession()
-                if wasRecording { try storage.save(loaded) }
+                let existing = Set(loaded.entries.map(\.id))
+                continuation = loaded.consumeUpdateContinuation(at: launchDate, appVersion: appVersion)
+                if continuation == nil { _ = loaded.recoverInterruptedSession() }
+                due = loaded.entries.filter { !existing.contains($0.id) }.map(\.id)
+                if wasRecording || previous.updateContinuation != nil {
+                    do { try storage.save(loaded) }
+                    catch {
+                        loaded = previous
+                        loaded.updateContinuation = nil
+                        _ = loaded.recoverInterruptedSession()
+                        continuation = nil
+                        due = []
+                        throw error
+                    }
+                }
             }
         } catch {
             storageLoaded = false
@@ -65,6 +86,21 @@ final class AppModel: ObservableObject {
         }
         journal = loaded
         hasStorageError = !storageLoaded
+        if let continuation {
+            promptEntryID = continuation.promptEntryID.flatMap { id in
+                loaded.entries.contains(where: { $0.id == id && $0.isPending }) ? id : nil
+            }
+            promptQueue = (continuation.promptQueue ?? []).filter { id in
+                id != promptEntryID && loaded.entries.contains(where: { $0.id == id && $0.isPending })
+            }
+            if promptEntryID == nil { promptEntryID = nextQueuedEntry() }
+            if let draft = continuation.editorDraft,
+               draft.entryID == nil || loaded.entries.contains(where: { $0.id == draft.entryID }) {
+                editorDraft = draft
+                presentedEditor = EntryEditorRequest(entry: loaded.entries.first { $0.id == draft.entryID }, draft: draft)
+            }
+            showDueEntries(due)
+        }
         if let failure {
             errorMessage = text("读取日志失败。原文件已保留，请打开数据文件夹或从备份恢复。", "Your journal could not be loaded. The original file is preserved; open its folder or restore the backup.") + "\n" + failure
         }
@@ -185,6 +221,7 @@ final class AppModel: ObservableObject {
         }
         guard flushDrafts() else { return }
         let current = entry.flatMap { item in entries.first { $0.id == item.id } }
+        editorDraft = nil
         presentedEditor = EntryEditorRequest(entry: current)
     }
 
@@ -200,6 +237,7 @@ final class AppModel: ObservableObject {
         if result {
             if let id { drafts.removeValue(forKey: id) }
             presentedEditor = nil
+            editorDraft = nil
             errorMessage = nil
         }
         return result
@@ -211,6 +249,7 @@ final class AppModel: ObservableObject {
             promptQueue.removeAll { $0 == id }
             if promptEntryID == id { promptEntryID = nextQueuedEntry() }
             presentedEditor = nil
+            editorDraft = nil
         }
     }
 
@@ -266,6 +305,7 @@ final class AppModel: ObservableObject {
             promptQueue.removeAll()
             promptEntryID = nil
             presentedEditor = nil
+            editorDraft = nil
             journal = restored
             storageLoaded = true
             hasStorageError = false
@@ -288,13 +328,47 @@ final class AppModel: ObservableObject {
     func prepareForQuit() -> Bool {
         draftSave?.cancel()
         guard storageLoaded else { return true }
+        if updating, let continuation = journal.updateContinuation {
+            return prepareForUpdate(sourceVersion: continuation.sourceVersion, targetVersion: continuation.targetVersion)
+        }
         return commit { state in
             applyDrafts(to: &state)
+            state.updateContinuation = nil
             _ = state.stop(at: Date())
         }
     }
 
+    func prepareForUpdate(sourceVersion: String, targetVersion: String) -> Bool {
+        guard !sourceVersion.isEmpty, !targetVersion.isEmpty else { return false }
+        draftSave?.cancel()
+        now = Date()
+        var due: [UUID] = []
+        guard commit({ state in
+            applyDrafts(to: &state)
+            due = state.advance(to: now)
+            state.updateContinuation = AppUpdateContinuation(
+                preparedAt: now, sourceVersion: sourceVersion, targetVersion: targetVersion,
+                promptEntryID: promptEntryID ?? due.first,
+                promptQueue: promptQueue + due.filter { $0 != (promptEntryID ?? due.first) && !promptQueue.contains($0) },
+                editorDraft: editorDraft ?? (presentedEditor == nil ? nil : journal.updateContinuation?.editorDraft))
+        }) else { return false }
+        updating = true
+        lastCheckpoint = now
+        showDueEntries(due)
+        return true
+    }
+
+    @discardableResult
+    func cancelPreparedUpdate() -> Bool {
+        updating = false
+        guard journal.updateContinuation != nil else { return true }
+        if commit({ $0.updateContinuation = nil }) { return true }
+        journal.updateContinuation = nil
+        return false
+    }
+
     func handleSleep() {
+        guard !updating else { return }
         resumeAfterWake = isRecording
         guard isRecording else { return }
         draftSave?.cancel()
@@ -320,7 +394,7 @@ final class AppModel: ObservableObject {
 
     private func tick() {
         now = Date()
-        guard isRecording else { return }
+        guard storageLoaded, isRecording else { return }
         var next = journal
         let due = next.advance(to: now)
         guard !due.isEmpty || now.timeIntervalSince(lastCheckpoint) >= 60 else { return }

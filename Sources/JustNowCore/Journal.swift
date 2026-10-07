@@ -54,6 +54,38 @@ public struct RecordingSession: Codable, Equatable, Sendable {
     }
 }
 
+public struct JournalEditorDraft: Codable, Equatable, Sendable {
+    public var entryID: UUID?
+    public var start: Date
+    public var end: Date
+    public var text: String
+
+    public init(entryID: UUID?, start: Date, end: Date, text: String) {
+        self.entryID = entryID
+        self.start = start
+        self.end = end
+        self.text = text
+    }
+}
+
+public struct AppUpdateContinuation: Codable, Equatable, Sendable {
+    public var preparedAt: Date
+    public var sourceVersion: String
+    public var targetVersion: String
+    public var promptEntryID: UUID?
+    public var promptQueue: [UUID]?
+    public var editorDraft: JournalEditorDraft?
+
+    public init(preparedAt: Date, sourceVersion: String, targetVersion: String, promptEntryID: UUID? = nil, promptQueue: [UUID] = [], editorDraft: JournalEditorDraft? = nil) {
+        self.preparedAt = preparedAt
+        self.sourceVersion = sourceVersion
+        self.targetVersion = targetVersion
+        self.promptEntryID = promptEntryID
+        self.promptQueue = promptQueue
+        self.editorDraft = editorDraft
+    }
+}
+
 public enum JournalError: LocalizedError, Equatable {
     case unsupportedVersion(Int)
     case invalidInterval
@@ -85,6 +117,7 @@ public struct JournalState: Codable, Equatable, Sendable {
     public var entries: [JournalEntry] = []
     public var preferences = Preferences()
     public var session: RecordingSession?
+    public var updateContinuation: AppUpdateContinuation?
     public var isRecording: Bool { session != nil }
     public init() {}
 
@@ -123,13 +156,27 @@ public struct JournalState: Codable, Equatable, Sendable {
             ids.append(entry.id)
         }
         session = nil
+        updateContinuation = nil
         return ids
     }
 
     @discardableResult
     public mutating func recoverInterruptedSession() -> [UUID] {
+        updateContinuation = nil
         guard let heartbeat = session?.lastHeartbeatAt else { return [] }
         return stop(at: heartbeat)
+    }
+
+    public mutating func consumeUpdateContinuation(at date: Date, appVersion: String) -> AppUpdateContinuation? {
+        let continuation = updateContinuation
+        updateContinuation = nil
+        guard let continuation, Self.isFinite(date), Self.isFinite(continuation.preparedAt),
+              !continuation.sourceVersion.isEmpty, !continuation.targetVersion.isEmpty,
+              appVersion == continuation.targetVersion || appVersion == continuation.sourceVersion,
+              (0...300).contains(date.timeIntervalSince(continuation.preparedAt)),
+              session.map({ date >= $0.lastHeartbeatAt }) ?? true else { return nil }
+        _ = advance(to: date)
+        return continuation
     }
 
     public mutating func setDraft(id: UUID, text: String) {
