@@ -75,7 +75,7 @@ struct JournalEventEditor: View {
                     guard let newFocus else { return }
                     let id: UUID
                     switch newFocus { case .topic(let value), .content(let value): id = value }
-                    withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id) }
+                    proxy.scrollTo(id)
                 }
                 .onAppear { reportHeight(width: geometry.size.width) }
                 .onChange(of: rows) { _, _ in reportHeight(width: geometry.size.width) }

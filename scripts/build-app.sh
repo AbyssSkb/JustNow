@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.1.14}"
+VERSION="${VERSION:-0.1.15}"
 DIST="$ROOT/dist"
 APP="$DIST/JustNow.app"
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
