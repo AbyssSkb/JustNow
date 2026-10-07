@@ -17,7 +17,7 @@ struct ApplicationRecallView: View {
 
     private var inlineRecall: some View {
         HStack(spacing: 10) {
-            Text(model.text("回忆线索", "A few clues"))
+            Text(model.text("回忆线索", "App clues"))
                 .font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.secondary)
                 .fixedSize()
             if summary.applications.isEmpty {
@@ -57,7 +57,7 @@ struct ApplicationRecallView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 7) {
                 Image(systemName: "rectangle.on.rectangle").foregroundStyle(Theme.accent)
-                Text(model.text("回忆线索", "A few clues")).font(.system(size: 11, weight: .semibold))
+                Text(model.text("回忆线索", "App clues")).font(.system(size: 11, weight: .semibold))
                 Spacer()
                 Button { showingAll = true } label: {
                     Text(model.text("查看全部", "View all"))

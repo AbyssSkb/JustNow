@@ -93,17 +93,10 @@ struct MainView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 BrandMark(size: 37)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("JustNow").font(.system(size: 20, weight: .bold, design: .rounded))
-                    Text(model.text("记下刚才，留住日常", "A little record of your day"))
-                        .font(.system(size: 10)).foregroundStyle(Theme.secondary)
-                }
+                Text("JustNow").font(.system(size: 20, weight: .bold, design: .rounded))
             }
             .padding(.bottom, 38)
 
-            Text(model.text("我的时间", "YOUR TIME"))
-                .font(.system(size: 10, weight: .semibold)).tracking(1.4)
-                .foregroundStyle(Theme.secondary).padding(.leading, 12).padding(.bottom, 10)
             navigationButton(.today, title: model.text("今日", "Today"), icon: "sun.max")
             navigationButton(.history, title: model.text("时间档案", "Journal"), icon: "clock.arrow.circlepath")
             navigationButton(.topics, title: model.text("主题", "Topics"), icon: "square.grid.2x2")
@@ -169,8 +162,10 @@ struct MainView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(sectionTitle)
                     .font(.system(size: 28, weight: .bold, design: .rounded))
-                Text(sectionSubtitle)
-                    .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                if model.selectedSection == .today {
+                    Text(dateLabel(model.now, model: model))
+                        .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                }
             }
             Spacer()
             if model.selectedSection != .settings {
@@ -193,15 +188,6 @@ struct MainView: View {
         case .history: return model.text("时间档案", "Your journal")
         case .topics: return model.text("主题", "Topics")
         case .settings: return model.text("设置", "Settings")
-        }
-    }
-
-    private var sectionSubtitle: String {
-        switch model.selectedSection {
-        case .today: return dateLabel(model.now, model: model)
-        case .history: return model.text("回看那些做过的小事。", "The little things that made up your day.")
-        case .topics: return model.text("全部已保存时段中的主题与具体事件。", "Topics and details across all saved intervals.")
-        case .settings: return model.text("按你的节奏，记录你的时间。", "A rhythm that feels right for you.")
         }
     }
 
@@ -273,21 +259,16 @@ struct MainView: View {
 
     private var timeline: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text(model.selectedSection == .today ? model.text("今天的片段", "Today's entries") : dateLabel(model.selectedDay, model: model))
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(1).layoutPriority(1)
-                Spacer()
-                Text(model.text("每一小段，都算数", "Every little moment counts"))
-                    .font(.system(size: 11)).foregroundStyle(Theme.secondary).lineLimit(1)
-            }
+            Text(model.selectedSection == .today ? model.text("今天的片段", "Today's entries") : dateLabel(model.selectedDay, model: model))
+                .font(.system(size: 14, weight: .semibold))
+                .lineLimit(1)
             if model.selectedDayEntries.isEmpty {
                 VStack(spacing: 14) {
                     Image(systemName: model.searchText.isEmpty ? "text.book.closed" : "magnifyingglass")
                         .font(.system(size: 29, weight: .ultraLight)).foregroundStyle(Theme.accent.opacity(0.75))
                         .frame(width: 62, height: 62)
                         .background(Theme.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 18))
-                    Text(model.searchText.isEmpty ? model.text("时间还留着空白", "A little space for your day") : model.text("没有找到匹配的记录", "No matching entries"))
+                    Text(model.searchText.isEmpty ? model.text("暂无记录", "No entries yet") : model.text("没有找到匹配的记录", "No matching entries"))
                         .font(.system(size: 15, weight: .medium))
                     Text(model.searchText.isEmpty ? model.text("开始记录，提醒时写一句刚才做了什么。\n也可以随时补记一段。", "Start recording, then write a few words when reminded.\nYou can add an entry whenever you like.") : model.text("换个关键词再试试。", "Try a different word."))
                         .font(.system(size: 12)).foregroundStyle(Theme.secondary)
@@ -325,26 +306,15 @@ private struct RecordingCard: View {
             VStack(alignment: .leading, spacing: 13) {
                 HStack(spacing: 6) {
                     Circle().fill(model.isRecording ? Theme.accent : Theme.secondary.opacity(0.6)).frame(width: 5, height: 5)
-                    Text(model.isPaused ? model.text("记录已暂停", "PAUSED") : model.isRecording ? model.text("记录进行中", "RECORDING") : model.text("从现在开始", "A MOMENT TO BEGIN"))
-                        .font(.system(size: 11, weight: .semibold)).tracking(0.8)
+                    Text(model.isPaused ? model.text("已暂停", "Paused") : model.isRecording ? model.text("正在记录", "Recording") : model.text("未开始记录", "Not recording"))
+                        .font(.system(size: 23, weight: .semibold, design: .rounded))
                         .foregroundStyle(model.isRecording ? Theme.accent : Theme.secondary)
                 }
-                Text(model.isPaused ? model.text("回来了？接着记。", "Welcome back. Pick up here.") : model.isRecording ? model.text("专注眼前，稍后记下。", "Be here. Write it down later.") : model.text("刚才，你做了什么？", "What have you been up to?"))
-                    .font(.system(size: 24, weight: .semibold, design: .rounded))
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(model.isPaused ? model.text("已在 ", "Paused at ") + timeLabel(model.pauseDate ?? model.now) : model.isRecording ? model.text("下一次提醒", "Next reminder") + "  " + timeLabel(model.nextReminderDate ?? model.now) : model.text("每隔 \(model.preferences.intervalMinutes) 分钟，用一句话留住刚才。", "Every \(model.preferences.intervalMinutes) min, capture what you just did."))
-                    .font(.system(size: 12)).foregroundStyle(Theme.secondary)
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 12) {
-                        recordingButton
-                        if !model.isRecording { recordingHint.fixedSize() }
-                    }
-                    VStack(alignment: .leading, spacing: 10) {
-                        recordingButton
-                        if !model.isRecording { recordingHint }
-                    }
+                if model.isPaused || model.isRecording {
+                    Text(model.isPaused ? model.text("已在 ", "Paused at ") + timeLabel(model.pauseDate ?? model.now) : model.text("下一次提醒", "Next reminder") + "  " + timeLabel(model.nextReminderDate ?? model.now))
+                        .font(.system(size: 12)).foregroundStyle(Theme.secondary)
                 }
-                .padding(.top, 4)
+                recordingButton.padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             ZStack {
@@ -381,12 +351,6 @@ private struct RecordingCard: View {
         .buttonStyle(ActionButtonStyle(primary: !model.isRecording))
         .disabled(model.hasStorageError)
         .fixedSize()
-    }
-
-    private var recordingHint: some View {
-        Text(model.isPaused ? model.text("离开的时间，由你决定是否保留", "You decide whether to keep the time away") : model.text("随时开始，也随时结束", "Start and stop whenever you like"))
-            .font(.system(size: 11)).foregroundStyle(Theme.secondary)
-            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -528,7 +492,7 @@ private struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             VStack(alignment: .leading, spacing: 20) {
-                sectionHeading(model.text("记录节奏", "Your rhythm"), icon: "timer")
+                sectionHeading(model.text("记录节奏", "Recording"), icon: "timer")
                 HStack {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(model.text("提醒间隔", "Check-in interval")).font(.system(size: 13, weight: .medium))
@@ -586,9 +550,9 @@ private struct SettingsView: View {
             .journalCard()
 
             VStack(alignment: .leading, spacing: 20) {
-                sectionHeading(model.text("外观与启动", "Make it yours"), icon: "paintbrush.pointed")
+                sectionHeading(model.text("外观与启动", "Appearance & startup"), icon: "paintbrush.pointed")
                 VStack(alignment: .leading, spacing: 14) {
-                    settingDescription(title: model.text("外观", "Appearance"), subtitle: model.text("让 JustNow 融入你的桌面", "A comfortable fit for your desktop"))
+                    Text(model.text("外观", "Appearance")).font(.system(size: 13, weight: .medium))
                     HStack(spacing: 9) {
                         ForEach(AppAppearance.allCases, id: \.self) { option in
                             Button { change { $0.appearance = option } } label: {
@@ -625,7 +589,7 @@ private struct SettingsView: View {
             .journalCard()
 
             VStack(alignment: .leading, spacing: 18) {
-                sectionHeading(model.text("你的记录，属于你", "Your journal belongs to you"), icon: "lock.shield")
+                sectionHeading(model.text("数据与隐私", "Data & privacy"), icon: "lock.shield")
                 Text(model.text("所有记录都保存在本机。不需要账号，不上传记录，没有分析追踪。", "Everything stays on your Mac. No account, no uploads, no analytics."))
                     .font(.system(size: 12)).foregroundStyle(Theme.secondary).lineSpacing(5)
                 HStack(spacing: 9) {
@@ -668,10 +632,10 @@ private struct SettingsView: View {
             HStack {
                 BrandMark(size: 22)
                 Text("JustNow").font(.system(size: 12, weight: .semibold, design: .rounded))
-                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.12")
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.13")
                     .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 Spacer()
-                Text(model.text("用 MIT 许可开源 · 为日常留一点空间", "Open source under MIT · A little room for your day"))
+                Text(model.text("MIT 开源", "Open source under MIT"))
                     .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                     .lineLimit(1).minimumScaleFactor(0.9)
             }
@@ -990,6 +954,7 @@ private struct EntryEditorView: View {
     @State private var confirmDelete = false
     @State private var savedOrDeleted = false
     @State private var writing = false
+    @State private var editorHeight: CGFloat = 90
     @Environment(\.dismiss) private var dismiss
 
     init(model: AppModel, request: EntryEditorRequest) {
@@ -1000,20 +965,17 @@ private struct EntryEditorView: View {
         _start = State(initialValue: request.draft?.start ?? request.entry?.start ?? initialEnd.addingTimeInterval(-Double(model.preferences.intervalMinutes * 60)))
         let initialText = request.draft?.text ?? request.entry?.text ?? ""
         let structured = request.draft.map { $0.usesStructuredEvents == true } ?? (request.entry?.events != nil)
-        _draft = State(initialValue: structured ? initialText : JournalEvents.legacyInputText(initialText))
+        let input = structured ? initialText : JournalEvents.legacyInputText(initialText)
+        _draft = State(initialValue: input)
+        _editorHeight = State(initialValue: JournalEventEditor.height(for: JournalEventInputRow.rows(for: input), width: 450))
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 23) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(request.entry == nil ? model.text("补记一段时间", "Add a little moment") : model.text("编辑这段记录", "Edit this moment"))
-                        .font(.system(size: 23, weight: .semibold, design: .rounded))
-                    Text(model.text("那些做过的小事，都值得被记下。", "The little things you did deserve a few words."))
-                        .font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                }
-                Spacer()
-                BrandMark(size: 30)
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(spacing: 10) {
+                BrandMark(size: 26)
+                Text(request.entry == nil ? model.text("补记一段时间", "Add entry") : model.text("编辑这段记录", "Edit entry"))
+                    .font(.system(size: 23, weight: .semibold, design: .rounded))
             }
             VStack(spacing: 15) {
                 HStack {
@@ -1034,16 +996,16 @@ private struct EntryEditorView: View {
             }
             .padding(16).background(Theme.inset, in: RoundedRectangle(cornerRadius: 12))
             if let summary = request.entry?.applicationUsage {
-                ApplicationRecallView(model: model, summary: summary, compact: true)
+                ApplicationRecallView(model: model, summary: summary, compact: true, inline: true)
                 if abs(summary.start.timeIntervalSince(start)) > 1 || abs(summary.end.timeIntervalSince(end)) > 1 {
                     Text(model.text("线索来自原时段 ", "Clues come from the original interval ") + timeLabel(summary.start) + " – " + timeLabel(summary.end))
                         .font(.system(size: 10)).foregroundStyle(Theme.secondary)
                 }
             }
-            VStack(alignment: .leading, spacing: 7) {
-                JournalEventEditor(model: model, text: $draft, focused: $writing)
-                    .frame(height: 200)
+            JournalEventEditor(model: model, text: $draft, focused: $writing) { height in
+                editorHeight = height
             }
+            .frame(height: min(200, editorHeight))
             if end <= start {
                 Text(model.text("结束时间需要晚于开始时间。", "The end needs to be after the start."))
                     .font(.system(size: 11)).foregroundStyle(Theme.amber)

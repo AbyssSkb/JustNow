@@ -40,6 +40,15 @@ struct JournalEventEditor: View {
 
     private enum Field: Equatable { case topic(UUID), content(UUID) }
 
+    init(model: AppModel, text: Binding<String>, focused: Binding<Bool>, onHeightChange: ((CGFloat) -> Void)? = nil) {
+        self.model = model
+        _text = text
+        _focused = focused
+        self.onHeightChange = onHeightChange
+        _rows = State(initialValue: JournalEventInputRow.rows(for: text.wrappedValue))
+        _lastEmitted = State(initialValue: text.wrappedValue)
+    }
+
     var body: some View {
         GeometryReader { geometry in
             ScrollViewReader { proxy in
@@ -74,7 +83,6 @@ struct JournalEventEditor: View {
             }
         }
         .onAppear {
-            load(text)
             if focused { focus = .topic(rows[0].id) }
         }
         .onChange(of: text) { _, value in
@@ -103,7 +111,7 @@ struct JournalEventEditor: View {
                 .simultaneousGesture(TapGesture().onEnded { focus = .topic(row.id) })
             JournalTextEditor(text: contentBinding(row.id), placeholder: model.text("具体做了什么？", "What did you do?"),
                               focused: focusBinding(.content(row.id)), onNextEvent: { append(after: row.id) })
-                .frame(height: min(contentHeight(row.content, width: width - 182), max(44, viewportHeight - 46)))
+                .frame(height: min(Self.contentHeight(row.content, width: width - 182), max(44, viewportHeight - 46)))
                 .accessibilityLabel(model.text("第 \(index + 1) 项内容", "Event \(index + 1) details"))
             if rows.count > 1 {
                 Button { remove(row.id) } label: {
@@ -120,7 +128,7 @@ struct JournalEventEditor: View {
         }
     }
 
-    private func contentHeight(_ content: String, width: CGFloat) -> CGFloat {
+    private static func contentHeight(_ content: String, width: CGFloat) -> CGFloat {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 5
         let bounds = ((content.isEmpty ? " " : content) as NSString).boundingRect(
@@ -130,11 +138,15 @@ struct JournalEventEditor: View {
         return max(44, ceil(bounds.height) + 24)
     }
 
+    static func height(for rows: [JournalEventInputRow], width: CGFloat) -> CGFloat {
+        rows.reduce(CGFloat(38 + rows.count * 8)) {
+            $0 + contentHeight($1.content, width: width - 182)
+        }
+    }
+
     private func reportHeight(width: CGFloat) {
         guard width > 0 else { return }
-        let height = rows.reduce(CGFloat(38 + rows.count * 8)) {
-            $0 + max(44, contentHeight($1.content, width: width - 182))
-        }
+        let height = Self.height(for: rows, width: width)
         guard height != lastReportedHeight else { return }
         lastReportedHeight = height
         onHeightChange?(height)
@@ -216,6 +228,8 @@ private struct EventTopicField: NSViewRepresentable {
         field.textColor = NSColor(Theme.accent)
         field.focusRingType = .none
         field.usesSingleLineMode = true
+        field.maximumNumberOfLines = 1
+        field.cell?.isScrollable = true
         field.delegate = context.coordinator
         return field
     }
