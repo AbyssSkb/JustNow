@@ -65,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         updates = UpdateController(enabled: !model.isDemo)
         updates.onBeforeRelaunch = { [weak self] targetVersion in
             guard let self else { return false }
-            let sourceVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.13"
+            let sourceVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.14"
             return self.model.prepareForUpdate(sourceVersion: sourceVersion, targetVersion: targetVersion)
         }
         updates.onCancel = { [weak self] in _ = self?.model.cancelPreparedUpdate() }
@@ -74,6 +74,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             self.model.errorMessage = self.model.text("更新未完成：", "Update could not finish: ") + detail
         }
         model.onShowMainWindow = { [weak self] in self?.showMainWindow() }
+        model.$journal.map { $0.preferences.appearance }.removeDuplicates().sink { appearance in
+            NSApp.appearance = appearance == .system ? nil : NSAppearance(named: appearance == .dark ? .darkAqua : .aqua)
+        }.store(in: &subscriptions)
         createMainMenu()
         createMainWindow()
         createStatusItem()
@@ -170,6 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     func window(_ window: NSWindow, willPositionSheet sheet: NSWindow, using rect: NSRect) -> NSRect {
+        sheet.backgroundColor = NSColor(Theme.background)
         // The application delegate saves drafts before allowing termination.
         sheet.preventsApplicationTerminationWhenModal = false
         return rect
@@ -268,7 +272,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "JustNow · 刚才",
-            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.13",
+            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.14",
             .credits: NSAttributedString(string: model.text("一句话，留下刚才。\n免费开源 · MIT", "A small pause. A clearer day.\nFree & open source · MIT"))
         ])
     }

@@ -48,7 +48,6 @@ struct MainView: View {
         .background(Theme.background)
         .foregroundStyle(Theme.ink)
         .tint(Theme.accent)
-        .preferredColorScheme(model.preferences.appearance == .system ? nil : model.preferences.appearance == .dark ? .dark : .light)
         .frame(minWidth: 900, minHeight: 650)
         .sheet(item: $model.presentedEditor) { request in
             EntryEditorView(model: model, request: request)
@@ -632,7 +631,7 @@ private struct SettingsView: View {
             HStack {
                 BrandMark(size: 22)
                 Text("JustNow").font(.system(size: 12, weight: .semibold, design: .rounded))
-                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.13")
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.14")
                     .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 Spacer()
                 Text(model.text("MIT 开源", "Open source under MIT"))
@@ -865,7 +864,6 @@ struct PromptView: View {
         .padding(.horizontal, 22).padding(.top, 30).padding(.bottom, 20)
         .background(Theme.background).foregroundStyle(Theme.ink).tint(Theme.accent)
         .ignoresSafeArea(edges: .top)
-        .preferredColorScheme(model.preferences.appearance == .system ? nil : model.preferences.appearance == .dark ? .dark : .light)
         .onAppear { writing = true; onHeightChange?(preferredHeight) }
         .onChange(of: preferredHeight) { _, value in onHeightChange?(value) }
         .onChange(of: draft) { _, value in model.setDraft(id: entryID, text: value) }
