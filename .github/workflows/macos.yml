@@ -17,7 +17,7 @@ jobs:
   test-and-build:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Select Xcode and require Swift 6.2
         run: |
           sudo xcode-select --switch /Applications/Xcode_26.3.app
@@ -35,7 +35,7 @@ jobs:
         run: ./scripts/build-app.sh
       - name: Check single-instance journal protection
         run: python3 scripts/check-single-instance.py dist/JustNow.app/Contents/MacOS/JustNow
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: JustNow-macOS-universal-ad-hoc
           path: |

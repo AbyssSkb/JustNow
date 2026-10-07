@@ -68,7 +68,7 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'version={version}\ntag={tag}\nprevious_tag={previous}\n')
           PY
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: refs/tags/${{ steps.version.outputs.tag }}
           fetch-depth: 0
