@@ -89,9 +89,10 @@ final class AppModel: ObservableObject {
         return min(1, max(0, now.timeIntervalSince(session.segmentStartedAt) / (Double(session.intervalMinutes) * 60)))
     }
     var pendingEntries: [JournalEntry] { entries.filter(\.isPending).sorted { $0.start < $1.start } }
+    var displayDay: Date { selectedSection == .today ? now : selectedDay }
     var selectedDayEntries: [JournalEntry] {
         let calendar = Calendar.current
-        let dayStart = calendar.startOfDay(for: selectedDay)
+        let dayStart = calendar.startOfDay(for: displayDay)
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return entries.filter {
@@ -99,7 +100,7 @@ final class AppModel: ObservableObject {
         }.sorted { selectedSection == .today ? $0.start > $1.start : $0.start < $1.start }
     }
     var recordedDuration: TimeInterval {
-        let start = Calendar.current.startOfDay(for: selectedDay)
+        let start = Calendar.current.startOfDay(for: displayDay)
         let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!
         return selectedDayEntries.filter { !$0.isPending }.reduce(0) {
             $0 + max(0, min($1.end, end).timeIntervalSince(max($1.start, start)))
@@ -107,6 +108,12 @@ final class AppModel: ObservableObject {
     }
     var pendingCount: Int { selectedDayEntries.filter(\.isPending).count }
     var completedCount: Int { selectedDayEntries.filter { !$0.isPending }.count }
+    var todayPendingCount: Int {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: now)
+        let end = calendar.date(byAdding: .day, value: 1, to: start)!
+        return entries.filter { $0.isPending && $0.start < end && $0.end > start }.count
+    }
 
     func text(_ chinese: String, _ english: String) -> String {
         preferences.language.usesChinese ? chinese : english
@@ -155,6 +162,7 @@ final class AppModel: ObservableObject {
         draftSave?.cancel()
         promptQueue.removeAll { $0 == id }
         promptEntryID = nextQueuedEntry()
+        errorMessage = nil
         return true
     }
 
@@ -192,6 +200,7 @@ final class AppModel: ObservableObject {
         if result {
             if let id { drafts.removeValue(forKey: id) }
             presentedEditor = nil
+            errorMessage = nil
         }
         return result
     }

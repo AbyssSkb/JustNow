@@ -34,8 +34,8 @@ JustNow 是一个原生 macOS 时间日志。手动开始后，每隔一段时�
 ## 核心体验
 
 - **手动开始，手动停止。** 默认 30 分钟一次；可在设置中更改间隔。
-- **直接写刚才做了什么。** 每段记录包含起止时间与自由文字，支持多行。
-- **时间线与回顾。** 今日最新片段在最上面；可以按日期查看、搜索、修改历史记录，也可以手动补记。
+- **直接写刚才做了什么。** 每段记录包含起止时间与自由文字，长文本自动换行，支持多行。
+- **时间线与回顾。** 今日最新片段在最上面，保存后立即显示，跨午夜自动更新日期；可以按日期查看、搜索、修改历史记录，也可以手动补记。
 - **漏填也能补。** 点「稍后」保留待填写时间段，不丢失它的位置。
 - **本地保存与导出。** JSON 日志自动保存，保留上一次成功保存的备份，支持 CSV / JSON 导出。
 - **随时从菜单栏操作。** 查看状态、打开日志、开始或结束记录。
@@ -53,6 +53,7 @@ JustNow 是一个原生 macOS 时间日志。手动开始后，每隔一段时�
 git clone https://github.com/AbyssSkb/justnow.git
 cd justnow
 swift test
+python3 scripts/check-editor-wrapping.py
 ./scripts/build-app.sh
 open dist/JustNow.app
 ```
@@ -88,7 +89,7 @@ JustNow **不读取屏幕、应用使用记录或浏览器历史，不包含遥�
 
 ```sh
 SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
-VERSION=0.1.6 ./scripts/build-app.sh
+VERSION=0.1.7 ./scripts/build-app.sh
 
 SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
 NOTARY_PROFILE='justnow-notary' ./scripts/notarize.sh
@@ -96,7 +97,7 @@ NOTARY_PROFILE='justnow-notary' ./scripts/notarize.sh
 
 先按照 [Apple 的公证流程](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow) 创建 Keychain profile。脚本会检查 Developer ID 签名、hardened runtime 与时间戳；提交 ZIP、等待通过后将票据附加到 app，再重新生成 ZIP / DMG，提交并附加 DMG 票据，最后验证与更新校验文件。ZIP 本身不能附加票据，分发的 ZIP 内包含已附加票据的 app。
 
-GitHub Actions 在 push / PR 时测试与构建；推送 `v0.1.6` 这类标签会创建一个带安装包的**草稿 Release**。CI 未配置签名凭据，附件会明确标为 ad-hoc / 未公证。正式发布前，用公证后的安装包替换草稿附件。没有证书时，仍可分享源码和清楚标注签名状态的构建。
+GitHub Actions 在 push / PR 时测试与构建；推送 `v0.1.7` 这类标签会创建一个带安装包的**草稿 Release**。CI 未配置签名凭据，附件会明确标为 ad-hoc / 未公证。正式发布前，用公证后的安装包替换草稿附件。没有证书时，仍可分享源码和清楚标注签名状态的构建。
 
 ## 参与开发
 
@@ -122,12 +123,12 @@ JustNow is a native, local-first activity journal for macOS 14+. Start a session
 
 - Adjustable intervals; saving an entry does not reset the timer.
 - Custom date and time popovers with separate hour and minute selection; appearance and language options displayed directly in Settings.
-- Today shows the newest entries at the top. Browse daily history, search, edit, backfill, and return to pending entries when you choose Later.
+- Free text wraps automatically. Today shows new entries immediately, newest first, and follows the current date across midnight. Browse daily history, search, edit, backfill, and return to pending entries when you choose Later.
 - Stop captures the final partial interval. Sleep pauses tracking; waking resumes only an active session. Relaunch always requires a manual start.
 - Local JSON journal with previous-save backup, plus CSV / JSON export.
 - No account, telemetry, network requests, screen monitoring, or browsing history access.
 
-Build with `swift test` and `./scripts/build-app.sh`, then open `dist/JustNow.app`. Requires Xcode Command Line Tools and Swift 5.9+. Data lives in `~/Library/Application Support/JustNow/`.
+Validate with `swift test` and `python3 scripts/check-editor-wrapping.py`, then build with `./scripts/build-app.sh` and open `dist/JustNow.app`. Requires Xcode Command Line Tools and Swift 5.9+. Data lives in `~/Library/Application Support/JustNow/`.
 
 **Distribution:** Default builds are ad-hoc signed and **not notarized**; Gatekeeper may block downloaded copies. A verified public release requires a Developer ID Application certificate and Apple notarization. Set `SIGNING_IDENTITY` when building, then run `scripts/notarize.sh` with the same identity and a `NOTARY_PROFILE` stored in Keychain. Tag builds create draft releases, so maintainers can replace CI assets with notarized packages before publishing.
 

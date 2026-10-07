@@ -27,7 +27,7 @@ private struct NativeJournalEditor: NSViewRepresentable {
         let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = false
-        let editor = JournalNSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 180))
+        let editor = JournalNSTextView(frame: scroll.contentView.bounds)
         editor.isEditable = true
         editor.isSelectable = true
         editor.isRichText = false

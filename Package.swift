@@ -12,6 +12,7 @@ let package = Package(
         .target(name: "JustNowCore"),
         .executableTarget(name: "JustNow", dependencies: ["JustNowCore"],
                           resources: [.copy("Resources/BrandMark.png")]),
-        .testTarget(name: "JustNowCoreTests", dependencies: ["JustNowCore"])
+        .testTarget(name: "JustNowCoreTests", dependencies: ["JustNowCore"]),
+        .testTarget(name: "JustNowAppTests", dependencies: ["JustNow"])
     ]
 )

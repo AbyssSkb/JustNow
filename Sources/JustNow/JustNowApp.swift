@@ -69,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             self?.updateReminder(id: id)
         }.store(in: &subscriptions)
         model.$now.sink { [weak self] _ in self?.updateStatusTitle() }.store(in: &subscriptions)
-        model.$journal.map { $0.preferences.language }.removeDuplicates().sink { [weak self] _ in
+        model.$journal.map { $0.preferences.language }.removeDuplicates().receive(on: RunLoop.main).sink { [weak self] _ in
             self?.createMainMenu()
         }.store(in: &subscriptions)
         let center = NSWorkspace.shared.notificationCenter
@@ -219,7 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "JustNow · 刚才",
-            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.6",
+            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.7",
             .credits: NSAttributedString(string: model.text("一句话，留下刚才。\n免费开源 · MIT", "A small pause. A clearer day.\nFree & open source · MIT"))
         ])
     }

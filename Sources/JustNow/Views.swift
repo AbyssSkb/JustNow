@@ -131,8 +131,8 @@ struct MainView: View {
                 Image(systemName: icon).font(.system(size: 15)).frame(width: 20)
                 Text(title).font(.system(size: 13, weight: model.selectedSection == section ? .semibold : .medium))
                 Spacer()
-                if section == .today, model.pendingCount > 0 {
-                    Text("\(model.pendingCount)").font(.system(size: 10, weight: .semibold))
+                if section == .today, model.todayPendingCount > 0 {
+                    Text("\(model.todayPendingCount)").font(.system(size: 10, weight: .semibold))
                         .padding(.horizontal, 6).padding(.vertical, 3)
                         .background(Theme.accent.opacity(0.12), in: Capsule())
                 }
@@ -511,7 +511,7 @@ private struct SettingsView: View {
             HStack {
                 BrandMark(size: 22)
                 Text("JustNow").font(.system(size: 12, weight: .semibold, design: .rounded))
-                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.6")
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.7")
                     .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 Spacer()
                 Text(model.text("用 MIT 许可开源 · 为日常留一点空间", "Open source under MIT · A little room for your day"))
@@ -746,7 +746,7 @@ private struct EntryEditorView: View {
     init(model: AppModel, request: EntryEditorRequest) {
         self.model = model
         self.request = request
-        let initialEnd = request.entry?.end ?? (Calendar.current.isDateInToday(model.selectedDay) ? model.now : Calendar.current.date(bySettingHour: 9, minute: 30, second: 0, of: model.selectedDay) ?? model.selectedDay)
+        let initialEnd = request.entry?.end ?? (Calendar.current.isDateInToday(model.displayDay) ? model.now : Calendar.current.date(bySettingHour: 9, minute: 30, second: 0, of: model.displayDay) ?? model.displayDay)
         _end = State(initialValue: initialEnd)
         _start = State(initialValue: request.entry?.start ?? initialEnd.addingTimeInterval(-Double(model.preferences.intervalMinutes * 60)))
         _draft = State(initialValue: request.entry?.text ?? "")
