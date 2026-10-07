@@ -65,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         updates = UpdateController(enabled: !model.isDemo)
         updates.onBeforeRelaunch = { [weak self] targetVersion in
             guard let self else { return false }
-            let sourceVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.8"
+            let sourceVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.9"
             return self.model.prepareForUpdate(sourceVersion: sourceVersion, targetVersion: targetVersion)
         }
         updates.onCancel = { [weak self] in _ = self?.model.cancelPreparedUpdate() }
@@ -85,13 +85,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             self?.createMainMenu()
         }.store(in: &subscriptions)
         let center = NSWorkspace.shared.notificationCenter
-        workspaceObservers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.model.handleSleep() }
-        })
-        workspaceObservers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.model.handleWake() }
-        })
+        let environmentEvents: [(Notification.Name, ApplicationUsageTracker.PauseReason, Bool)] = [
+            (NSWorkspace.willSleepNotification, .systemSleep, true),
+            (NSWorkspace.didWakeNotification, .systemSleep, false),
+            (NSWorkspace.screensDidSleepNotification, .screenSleep, true),
+            (NSWorkspace.screensDidWakeNotification, .screenSleep, false),
+            (NSWorkspace.sessionDidResignActiveNotification, .inactiveSession, true),
+            (NSWorkspace.sessionDidBecomeActiveNotification, .inactiveSession, false)
+        ]
+        for (notification, reason, paused) in environmentEvents {
+            workspaceObservers.append(center.addObserver(forName: notification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.model.setEnvironmentPaused(paused, for: reason) }
+            })
+        }
         showMainWindow()
+        model.beginOnLaunch()
         updates.start()
         if arguments.contains("--show-reminder") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in self?.model.showDemoReminder() }
@@ -133,6 +141,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             reminderPanel = panel
         }
         guard let panel = reminderPanel else { return }
+        let hasClues = model.entries.first(where: { $0.id == id })?.applicationUsage != nil
+        panel.setContentSize(NSSize(width: 520, height: hasClues ? 570 : 430))
         panel.contentView = NSHostingView(rootView: PromptView(model: model, entryID: id).id(id))
         panel.center()
         panel.makeKeyAndOrderFront(nil)
@@ -197,16 +207,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             button.toolTip = model.text("JustNow · 正在记录", "JustNow · Recording")
         } else {
             button.title = ""
-            button.toolTip = model.text("JustNow · 点击开始记录", "JustNow · Start when you're ready")
+            button.toolTip = model.isPaused ? model.text("JustNow · 已暂停", "JustNow · Paused") : model.text("JustNow · 点击开始记录", "JustNow · Start when you're ready")
         }
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let header = NSMenuItem(title: model.isRecording ? model.text("正在记录这一段", "Recording this moment") : "JustNow", action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: model.isPaused ? model.text("记录已暂停", "Recording paused") : model.isRecording ? model.text("正在记录这一段", "Recording this moment") : "JustNow", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
-        addMenuItem(to: menu, title: model.isRecording ? model.text("停止记录", "Stop recording") : model.text("开始记录", "Start recording"), action: #selector(toggleRecording))
+        addMenuItem(to: menu, title: model.isPaused ? model.text("继续记录", "Continue recording") : model.isRecording ? model.text("停止记录", "Stop recording") : model.text("开始记录", "Start recording"), action: #selector(toggleRecording))
         if !model.pendingEntries.isEmpty {
             addMenuItem(to: menu, title: model.text("补记待填时段", "Fill a pending moment") + " (\(model.pendingEntries.count))", action: #selector(openPending))
         }
@@ -238,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "JustNow · 刚才",
-            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.8",
+            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.9",
             .credits: NSAttributedString(string: model.text("一句话，留下刚才。\n免费开源 · MIT", "A small pause. A clearer day.\nFree & open source · MIT"))
         ])
     }

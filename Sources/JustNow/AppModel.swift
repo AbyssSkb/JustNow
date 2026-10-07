@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreGraphics
 import ServiceManagement
 import UniformTypeIdentifiers
 import JustNowCore
@@ -29,31 +30,47 @@ final class AppModel: ObservableObject {
     @Published var statusMessage: String?
     @Published var hasStorageError = false
     @Published var presentedEditor: EntryEditorRequest?
-    @Published var editorDraft: JournalEditorDraft?
+    @Published var editorDraft: JournalEditorDraft? {
+        didSet {
+            if editorDraft != oldValue, editorDraft != journal.editorDraft { scheduleDraftSave() }
+        }
+    }
     @Published var promptEntryID: UUID?
+    @Published var showingPauseResolution = false
     @Published private(set) var launchAtLogin = false
 
     let isDemo: Bool
     let dataDirectory: URL
     var onShowMainWindow: (() -> Void)?
     private let storage: JournalStorage
+    private let applicationTracker: ApplicationUsageTracker?
+    private let idleSeconds: () -> TimeInterval
+    private let resumedUpdate: Bool
     private var storageLoaded = true
     private var timer: Timer?
     private var lastCheckpoint = Date()
     private var promptQueue: [UUID] = []
     private var drafts: [UUID: String] = [:]
     private var draftSave: DispatchWorkItem?
-    private var resumeAfterWake = false
+    private var environmentPauses: Set<ApplicationUsageTracker.PauseReason> = []
+    private var beganOnLaunch = false
+    private var offeredPauseResolution = false
     private var updating = false
 
     init(isDemo: Bool = false, showOnboarding: Bool = false, dataDirectory: URL? = nil,
-         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.8") {
+         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.9",
+         trackApplicationUsage: Bool = true, applicationTracker: ApplicationUsageTracker? = nil,
+         idleSeconds: @escaping () -> TimeInterval = {
+             CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!)
+         }) {
         self.isDemo = isDemo
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         self.dataDirectory = dataDirectory ?? (isDemo
             ? FileManager.default.temporaryDirectory.appendingPathComponent("JustNow-Preview-\(UUID().uuidString)")
             : base.appendingPathComponent("JustNow", isDirectory: true))
         storage = JournalStorage(directory: self.dataDirectory)
+        self.applicationTracker = !isDemo && trackApplicationUsage ? (applicationTracker ?? ApplicationUsageTracker()) : nil
+        self.idleSeconds = idleSeconds
         var loaded = JournalState()
         var failure: String?
         var continuation: AppUpdateContinuation?
@@ -67,8 +84,12 @@ final class AppModel: ObservableObject {
                 let existing = Set(loaded.entries.map(\.id))
                 continuation = loaded.consumeUpdateContinuation(at: launchDate, appVersion: appVersion)
                 if continuation == nil { _ = loaded.recoverInterruptedSession() }
+                if let draft = continuation?.editorDraft { loaded.editorDraft = draft }
+                if let id = loaded.editorDraft?.entryID, !loaded.entries.contains(where: { $0.id == id }) {
+                    loaded.editorDraft = nil
+                }
                 due = loaded.entries.filter { !existing.contains($0.id) }.map(\.id)
-                if wasRecording || previous.updateContinuation != nil {
+                if wasRecording || previous.updateContinuation != nil || previous.editorDraft != loaded.editorDraft {
                     do { try storage.save(loaded) }
                     catch {
                         loaded = previous
@@ -85,6 +106,7 @@ final class AppModel: ObservableObject {
             failure = error.localizedDescription
         }
         journal = loaded
+        resumedUpdate = continuation != nil
         hasStorageError = !storageLoaded
         if let continuation {
             promptEntryID = continuation.promptEntryID.flatMap { id in
@@ -94,17 +116,18 @@ final class AppModel: ObservableObject {
                 id != promptEntryID && loaded.entries.contains(where: { $0.id == id && $0.isPending })
             }
             if promptEntryID == nil { promptEntryID = nextQueuedEntry() }
-            if let draft = continuation.editorDraft,
-               draft.entryID == nil || loaded.entries.contains(where: { $0.id == draft.entryID }) {
-                editorDraft = draft
-                presentedEditor = EntryEditorRequest(entry: loaded.entries.first { $0.id == draft.entryID }, draft: draft)
-            }
             showDueEntries(due)
+        }
+        if let draft = loaded.editorDraft,
+           draft.entryID == nil || loaded.entries.contains(where: { $0.id == draft.entryID }) {
+            editorDraft = draft
+            presentedEditor = EntryEditorRequest(entry: loaded.entries.first { $0.id == draft.entryID }, draft: draft)
         }
         if let failure {
             errorMessage = text("读取日志失败。原文件已保留，请打开数据文件夹或从备份恢复。", "Your journal could not be loaded. The original file is preserved; open its folder or restore the backup.") + "\n" + failure
         }
         if !isDemo { launchAtLogin = SMAppService.mainApp.status == .enabled }
+        syncApplicationTracking(at: launchDate)
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
@@ -113,16 +136,18 @@ final class AppModel: ObservableObject {
 
     var preferences: Preferences { journal.preferences }
     var entries: [JournalEntry] { journal.entries }
-    var isRecording: Bool { journal.isRecording }
+    var isRecording: Bool { journal.isRecording && !isPaused }
+    var isPaused: Bool { journal.pauseDate != nil }
+    var pauseDate: Date? { journal.pauseDate }
     var currentSegmentStart: Date? { journal.session?.segmentStartedAt }
     var nextReminderDate: Date? {
-        guard let session = journal.session else { return nil }
+        guard !isPaused, let session = journal.session else { return nil }
         return session.segmentStartedAt.addingTimeInterval(Double(session.intervalMinutes) * 60)
     }
     var remainingSeconds: TimeInterval { max(0, nextReminderDate?.timeIntervalSince(now) ?? 0) }
     var progress: Double {
         guard let session = journal.session else { return 0 }
-        return min(1, max(0, now.timeIntervalSince(session.segmentStartedAt) / (Double(session.intervalMinutes) * 60)))
+        return min(1, max(0, (pauseDate ?? now).timeIntervalSince(session.segmentStartedAt) / (Double(session.intervalMinutes) * 60)))
     }
     var pendingEntries: [JournalEntry] { entries.filter(\.isPending).sorted { $0.start < $1.start } }
     var displayDay: Date { selectedSection == .today ? now : selectedDay }
@@ -156,10 +181,16 @@ final class AppModel: ObservableObject {
     }
 
     func startRecording() {
+        if isPaused {
+            offeredPauseResolution = true
+            showingPauseResolution = true
+            showMainWindow()
+            return
+        }
         guard !isRecording else { return }
         now = Date()
         var started = false
-        if commit({ started = $0.start(at: now) }) {
+        if commit(at: now, { started = $0.start(at: now) }) {
             lastCheckpoint = now
             if !started {
                 errorMessage = text("有一条记录延伸到了未来，请先调整它的结束时间。", "A journal entry extends into the future. Adjust its end time before starting.")
@@ -168,10 +199,13 @@ final class AppModel: ObservableObject {
     }
 
     func stopRecording() {
-        guard isRecording else { return }
+        guard journal.isRecording else { return }
         now = Date()
         var due: [UUID] = []
-        if commit({ due = $0.stop(at: now); applyDrafts(to: &$0) }) { showDueEntries(due) }
+        if commit(at: now, { due = $0.stop(at: now); applyDrafts(to: &$0) }) {
+            showingPauseResolution = false
+            showDueEntries(due)
+        }
     }
 
     func updatePreferences(_ preferences: Preferences) {
@@ -179,11 +213,53 @@ final class AppModel: ObservableObject {
     }
 
     func completeOnboarding() {
-        _ = commit { $0.preferences.completedOnboarding = true }
+        if commit({ $0.preferences.completedOnboarding = true }) { beginOnLaunch() }
+    }
+
+    func beginOnLaunch() {
+        guard !beganOnLaunch, !isDemo, storageLoaded, preferences.completedOnboarding else { return }
+        beganOnLaunch = true
+        if isPaused {
+            offerPauseResolutionIfActive()
+            return
+        }
+        if !resumedUpdate && preferences.autoStartRecording != false { startRecording() }
+    }
+
+    @discardableResult
+    func resolvePause(recordGap: Bool) -> Bool {
+        guard let boundary = pauseDate, environmentPauses.isEmpty else { return false }
+        now = Date()
+        guard now >= boundary else { return false }
+        var due: [UUID] = []
+        guard commit(at: now, { state in
+            applyDrafts(to: &state)
+            due = state.resume(at: now, recordGap: recordGap)
+        }) else { return false }
+        showingPauseResolution = false
+        offeredPauseResolution = false
+        lastCheckpoint = now
+        if promptEntryID == nil { promptEntryID = nextQueuedEntry() }
+        showDueEntries(due)
+        return !isPaused && isRecording
+    }
+
+    func setEnvironmentPaused(_ paused: Bool, for reason: ApplicationUsageTracker.PauseReason, at date: Date = Date()) {
+        if paused {
+            environmentPauses.insert(reason)
+            showingPauseResolution = false
+            pauseRecording(at: date)
+        } else {
+            environmentPauses.remove(reason)
+        }
     }
 
     func setDraft(id: UUID, text: String) {
         drafts[id] = text
+        scheduleDraftSave()
+    }
+
+    private func scheduleDraftSave() {
         draftSave?.cancel()
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated { _ = self?.flushDrafts() }
@@ -202,6 +278,33 @@ final class AppModel: ObservableObject {
         return true
     }
 
+    func canDiscardPrompt(_ id: UUID) -> Bool {
+        guard let entry = entries.first(where: { $0.id == id }), entry.isPending,
+              (drafts[id] ?? entry.text).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return ![editorDraft, journal.editorDraft].compactMap { $0 }.contains {
+            $0.entryID == id && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    @discardableResult
+    func discardPrompt(id: UUID) -> Bool {
+        guard canDiscardPrompt(id) else { return false }
+        guard commit({ state in
+            applyDrafts(to: &state)
+            state.deleteEntry(id: id)
+            if state.editorDraft?.entryID == id { state.editorDraft = nil }
+        }) else { return false }
+        drafts.removeValue(forKey: id)
+        promptQueue.removeAll { $0 == id }
+        if promptEntryID == id { promptEntryID = nextQueuedEntry() }
+        if editorDraft?.entryID == id {
+            editorDraft = nil
+            presentedEditor = nil
+        }
+        errorMessage = nil
+        return true
+    }
+
     func dismissPrompt() {
         guard flushDrafts() else { return }
         promptQueue.removeAll()
@@ -209,20 +312,33 @@ final class AppModel: ObservableObject {
     }
 
     func openPendingEntry(_ id: UUID) {
+        guard presentedEditor == nil else { showMainWindow(); return }
         guard entries.contains(where: { $0.id == id && $0.isPending }), flushDrafts() else { return }
         promptQueue.removeAll()
         promptEntryID = id
     }
 
     func openEditor(_ entry: JournalEntry? = nil) {
+        guard presentedEditor == nil else { showMainWindow(); return }
         if promptEntryID != nil {
             dismissPrompt()
             guard promptEntryID == nil else { return }
         }
         guard flushDrafts() else { return }
         let current = entry.flatMap { item in entries.first { $0.id == item.id } }
+        let draft = editorDraft?.entryID == current?.id ? editorDraft : nil
+        presentedEditor = EntryEditorRequest(entry: current, draft: draft)
+    }
+
+    @discardableResult
+    func discardEditorDraft() -> Bool {
+        guard commit({ state in
+            applyDrafts(to: &state)
+            state.editorDraft = nil
+        }) else { return false }
         editorDraft = nil
-        presentedEditor = EntryEditorRequest(entry: current)
+        presentedEditor = nil
+        return true
     }
 
     func saveEditedEntry(id: UUID?, start: Date, end: Date, text: String) -> Bool {
@@ -231,8 +347,10 @@ final class AppModel: ObservableObject {
             return false
         }
         let result = commit { state in
+            applyDrafts(to: &state)
             if let id { try state.updateEntry(id: id, text: text, start: start, end: end) }
             else { _ = try state.insertEntry(start: start, end: end, text: text) }
+            state.editorDraft = nil
         }
         if result {
             if let id { drafts.removeValue(forKey: id) }
@@ -244,7 +362,11 @@ final class AppModel: ObservableObject {
     }
 
     func deleteEntry(_ id: UUID) {
-        if commit({ $0.deleteEntry(id: id) }) {
+        if commit({ state in
+            applyDrafts(to: &state)
+            state.deleteEntry(id: id)
+            state.editorDraft = nil
+        }) {
             drafts.removeValue(forKey: id)
             promptQueue.removeAll { $0 == id }
             if promptEntryID == id { promptEntryID = nextQueuedEntry() }
@@ -300,13 +422,20 @@ final class AppModel: ObservableObject {
             var restored = try storage.restoreBackup()
             _ = restored.recoverInterruptedSession()
             try storage.save(restored)
+            let date = Date()
+            applicationTracker?.stop(at: date)
+            applicationTracker?.acknowledge(through: date)
             draftSave?.cancel()
             drafts.removeAll()
             promptQueue.removeAll()
             promptEntryID = nil
             presentedEditor = nil
-            editorDraft = nil
             journal = restored
+            editorDraft = restored.editorDraft
+            if let draft = editorDraft,
+               draft.entryID == nil || entries.contains(where: { $0.id == draft.entryID }) {
+                presentedEditor = EntryEditorRequest(entry: entries.first { $0.id == draft.entryID }, draft: draft)
+            }
             storageLoaded = true
             hasStorageError = false
             errorMessage = nil
@@ -329,12 +458,15 @@ final class AppModel: ObservableObject {
         draftSave?.cancel()
         guard storageLoaded else { return true }
         if updating, let continuation = journal.updateContinuation {
-            return prepareForUpdate(sourceVersion: continuation.sourceVersion, targetVersion: continuation.targetVersion)
+            let prepared = prepareForUpdate(sourceVersion: continuation.sourceVersion, targetVersion: continuation.targetVersion)
+            if prepared { applicationTracker?.stop(at: now) }
+            return prepared
         }
-        return commit { state in
+        let date = Date()
+        return commit(at: date) { state in
             applyDrafts(to: &state)
             state.updateContinuation = nil
-            _ = state.stop(at: Date())
+            if state.pauseDate == nil { _ = state.stop(at: date) }
         }
     }
 
@@ -343,7 +475,7 @@ final class AppModel: ObservableObject {
         draftSave?.cancel()
         now = Date()
         var due: [UUID] = []
-        guard commit({ state in
+        guard commit(at: now, { state in
             applyDrafts(to: &state)
             due = state.advance(to: now)
             state.updateContinuation = AppUpdateContinuation(
@@ -368,46 +500,71 @@ final class AppModel: ObservableObject {
     }
 
     func handleSleep() {
-        guard !updating else { return }
-        resumeAfterWake = isRecording
-        guard isRecording else { return }
-        draftSave?.cancel()
-        var paused = journal
-        applyDrafts(to: &paused)
-        _ = paused.stop(at: Date())
-        // Preserve the paused in-memory state even if the disk becomes unavailable.
-        do { try storage.save(paused) } catch { report(error) }
-        journal = paused
-        promptQueue.removeAll()
-        promptEntryID = nil
+        setEnvironmentPaused(true, for: .systemSleep)
     }
 
     func handleWake() {
         now = Date()
-        if resumeAfterWake { startRecording() }
-        resumeAfterWake = false
+        setEnvironmentPaused(false, for: .systemSleep, at: now)
+    }
+
+    private func pauseRecording(at date: Date) {
+        guard journal.isRecording, !isPaused else { return }
+        draftSave?.cancel()
+        var paused = journal
+        paused.appendApplicationActivity(applicationTracker?.snapshot(at: date) ?? [])
+        applyDrafts(to: &paused)
+        let due = paused.pause(at: date)
+        offeredPauseResolution = false
+        // Preserve the paused in-memory state even if the disk becomes unavailable.
+        do {
+            try storage.save(paused)
+            applicationTracker?.acknowledge(through: date)
+        } catch { report(error) }
+        applicationTracker?.stop(at: date)
+        journal = paused
+        lastCheckpoint = date
+        promptQueue.append(contentsOf: due.filter { !promptQueue.contains($0) && $0 != promptEntryID })
     }
 
     func showDemoReminder() {
         if let id = pendingEntries.last?.id { openPendingEntry(id) }
     }
 
-    private func tick() {
-        now = Date()
-        guard storageLoaded, isRecording else { return }
-        var next = journal
-        let due = next.advance(to: now)
-        guard !due.isEmpty || now.timeIntervalSince(lastCheckpoint) >= 60 else { return }
-        applyDrafts(to: &next)
-        do {
-            try storage.save(next)
-            journal = next
+    func tick(at date: Date = Date()) {
+        now = date
+        guard storageLoaded, journal.isRecording else { return }
+        if isPaused {
+            offerPauseResolutionIfActive()
+            return
+        }
+        let inactivity = idleSeconds()
+        if !environmentPauses.isEmpty || (!isDemo && preferences.pauseWhenInactive != false && inactivity.isFinite && inactivity >= 1_800) {
+            pauseRecording(at: now)
+            return
+        }
+        guard nextReminderDate.map({ $0 <= now }) == true || now.timeIntervalSince(lastCheckpoint) >= 60 else { return }
+        var due: [UUID] = []
+        if commit(at: now, { state in
+            due = state.advance(to: now)
+            applyDrafts(to: &state)
+        }) {
             lastCheckpoint = now
             if !due.isEmpty {
                 if preferences.playSound { NSSound(named: "Tink")?.play() }
                 showDueEntries(due)
             }
-        } catch { report(error) }
+        }
+    }
+
+    private func offerPauseResolutionIfActive() {
+        let inactivity = idleSeconds()
+        guard !offeredPauseResolution, presentedEditor == nil, promptEntryID == nil,
+              environmentPauses.isEmpty, inactivity.isFinite, inactivity >= 0, inactivity < 2 else { return }
+        offeredPauseResolution = true
+        showingPauseResolution = true
+        selectedSection = .today
+        showMainWindow()
     }
 
     private func showDueEntries(_ ids: [UUID]) {
@@ -431,27 +588,39 @@ final class AppModel: ObservableObject {
     @discardableResult
     private func flushDrafts() -> Bool {
         draftSave?.cancel()
-        guard !drafts.isEmpty else { return true }
+        guard !drafts.isEmpty || editorDraft != journal.editorDraft else { return true }
         return commit { applyDrafts(to: &$0) }
     }
 
     private func applyDrafts(to state: inout JournalState) {
         for (id, text) in drafts { state.setDraft(id: id, text: text) }
+        state.editorDraft = editorDraft
     }
 
     @discardableResult
-    private func commit(_ update: (inout JournalState) throws -> Void) -> Bool {
+    private func commit(at date: Date = Date(), _ update: (inout JournalState) throws -> Void) -> Bool {
         guard storageLoaded else {
             errorMessage = text("请先恢复日志。原文件受保护，不会被空数据覆盖。", "Restore your journal first. Its original file is protected from being overwritten.")
             return false
         }
         do {
             var next = journal
+            next.appendApplicationActivity(applicationTracker?.snapshot(at: date) ?? [])
             try update(&next)
             try storage.save(next)
             journal = next
+            applicationTracker?.acknowledge(through: date)
+            syncApplicationTracking(at: date)
             return true
         } catch { report(error); return false }
+    }
+
+    private func syncApplicationTracking(at date: Date) {
+        if isRecording && environmentPauses.isEmpty && preferences.captureApplicationUsage != false {
+            if applicationTracker?.isTracking == false { applicationTracker?.start(at: date) }
+        } else {
+            applicationTracker?.stop(at: date)
+        }
     }
 
     private func report(_ error: Error) {
@@ -467,6 +636,7 @@ final class AppModel: ObservableObject {
             case .activeSessionConflict: detail = "这段时间正在记录中，请结束记录后再补记。"
             case .entryNotFound: detail = "这条记录已不存在。"
             case .noBackup: detail = "还没有可恢复的备份。"
+            case .invalidApplicationUsage: detail = "保存的应用使用时间无效，请从备份恢复。"
             }
         }
         errorMessage = text("操作未完成，已有记录已保留。", "The operation could not finish. Existing records are preserved.") + "\n" + detail

@@ -51,6 +51,17 @@ struct MainView: View {
         .sheet(item: $model.presentedEditor) { request in
             EntryEditorView(model: model, request: request)
         }
+        .overlay {
+            if model.showingPauseResolution, model.isPaused, model.presentedEditor == nil {
+                ZStack {
+                    Theme.background.opacity(0.75).ignoresSafeArea()
+                    PauseResolutionView(model: model)
+                        .frame(width: 470)
+                        .journalCard(padding: 28)
+                        .shadow(color: .black.opacity(0.10), radius: 24, y: 8)
+                }
+            }
+        }
         .overlay(alignment: .bottom) {
             if let message = model.errorMessage ?? model.statusMessage {
                 HStack(spacing: 10) {
@@ -293,14 +304,14 @@ private struct RecordingCard: View {
             VStack(alignment: .leading, spacing: 13) {
                 HStack(spacing: 6) {
                     Circle().fill(model.isRecording ? Theme.accent : Theme.secondary.opacity(0.6)).frame(width: 5, height: 5)
-                    Text(model.isRecording ? model.text("记录进行中", "RECORDING") : model.text("从现在开始", "A MOMENT TO BEGIN"))
+                    Text(model.isPaused ? model.text("记录已暂停", "PAUSED") : model.isRecording ? model.text("记录进行中", "RECORDING") : model.text("从现在开始", "A MOMENT TO BEGIN"))
                         .font(.system(size: 11, weight: .semibold)).tracking(0.8)
                         .foregroundStyle(model.isRecording ? Theme.accent : Theme.secondary)
                 }
-                Text(model.isRecording ? model.text("专注眼前，稍后记下。", "Be here. Write it down later.") : model.text("刚才，你做了什么？", "What have you been up to?"))
+                Text(model.isPaused ? model.text("回来了？接着记。", "Welcome back. Pick up here.") : model.isRecording ? model.text("专注眼前，稍后记下。", "Be here. Write it down later.") : model.text("刚才，你做了什么？", "What have you been up to?"))
                     .font(.system(size: 24, weight: .semibold, design: .rounded))
                     .fixedSize(horizontal: false, vertical: true)
-                Text(model.isRecording ? model.text("下一次提醒", "Next reminder") + "  " + timeLabel(model.nextReminderDate ?? model.now) : model.text("每隔 \(model.preferences.intervalMinutes) 分钟，用一句话留住刚才。", "Every \(model.preferences.intervalMinutes) min, capture what you just did."))
+                Text(model.isPaused ? model.text("已在 ", "Paused at ") + timeLabel(model.pauseDate ?? model.now) : model.isRecording ? model.text("下一次提醒", "Next reminder") + "  " + timeLabel(model.nextReminderDate ?? model.now) : model.text("每隔 \(model.preferences.intervalMinutes) 分钟，用一句话留住刚才。", "Every \(model.preferences.intervalMinutes) min, capture what you just did."))
                     .font(.system(size: 12)).foregroundStyle(Theme.secondary)
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) {
@@ -343,7 +354,7 @@ private struct RecordingCard: View {
 
     private var recordingButton: some View {
         Button { model.isRecording ? model.stopRecording() : model.startRecording() } label: {
-            Label(model.isRecording ? model.text("结束记录", "Stop recording") : model.text("开始记录", "Start recording"), systemImage: model.isRecording ? "stop.fill" : "play.fill")
+            Label(model.isPaused ? model.text("继续记录", "Continue recording") : model.isRecording ? model.text("结束记录", "Stop recording") : model.text("开始记录", "Start recording"), systemImage: model.isRecording ? "stop.fill" : "play.fill")
                 .actionLabel()
         }
         .buttonStyle(ActionButtonStyle(primary: !model.isRecording))
@@ -352,9 +363,63 @@ private struct RecordingCard: View {
     }
 
     private var recordingHint: some View {
-        Text(model.text("由你开始，也由你结束", "Start and stop on your terms"))
+        Text(model.isPaused ? model.text("离开的时间，由你决定是否保留", "You decide whether to keep the time away") : model.text("随时开始，也随时结束", "Start and stop whenever you like"))
             .font(.system(size: 11)).foregroundStyle(Theme.secondary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct PauseResolutionView: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Image(systemName: "pause.circle").font(.system(size: 30, weight: .light)).foregroundStyle(Theme.accent)
+            Text(model.text("欢迎回来", "Welcome back"))
+                .font(.system(size: 25, weight: .semibold, design: .rounded))
+            Text(model.text("记录已在 ", "Recording paused at ") + pauseLabel + model.text(" 暂停。之后的这段时间，需要留在日志里吗？", ". Would you like to keep the time since then in your journal?"))
+                .font(.system(size: 13)).foregroundStyle(Theme.secondary).lineSpacing(5)
+            VStack(spacing: 10) {
+                choice(title: model.text("刚才离开了，从现在继续", "I was away. Continue from now"), detail: model.text("跳过暂停后的时间", "Skip the time since pausing"), recordGap: false)
+                choice(title: model.text("仍在做事，保留这段时间", "I was still busy. Keep that time"), detail: model.text("把这段时间留作待补记录", "Keep those intervals to fill in later"), recordGap: true)
+            }
+            HStack {
+                Button { model.stopRecording() } label: {
+                    Text(model.text("结束记录", "Stop recording")).actionLabel(compact: true)
+                }
+                .buttonStyle(ActionButtonStyle(primary: false, compact: true))
+                Spacer()
+                Button { model.showingPauseResolution = false } label: {
+                    Text(model.text("稍后决定", "Decide later")).actionLabel(compact: true)
+                }
+                .buttonStyle(ActionButtonStyle(primary: false, compact: true))
+            }
+        }
+    }
+
+    private var pauseLabel: String {
+        let date = model.pauseDate ?? model.now
+        if Calendar.current.isDate(date, inSameDayAs: model.now) { return timeLabel(date) }
+        return date.formatted(.dateTime.month().day().locale(Locale(identifier: model.text("zh_CN", "en_US")))) + " " + timeLabel(date)
+    }
+
+    private func choice(title: String, detail: String, recordGap: Bool) -> some View {
+        Button { _ = model.resolvePause(recordGap: recordGap) } label: {
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title).font(.system(size: 13, weight: .medium))
+                    Text(detail).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "arrow.right").font(.system(size: 12))
+            }
+            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.inset, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.line))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .disabled(model.hasStorageError)
     }
 }
 
@@ -365,9 +430,9 @@ private struct EntryRow: View {
     var body: some View {
         Button { model.openEditor(entry) } label: {
             HStack(alignment: .center, spacing: 20) {
-                Text(timeLabel(entry.start) + " – " + timeLabel(entry.end))
+                Text(timeRangeLabel(entry.start, entry.end))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .frame(width: 98, alignment: .leading)
+                    .frame(width: 128, alignment: .leading)
                 VStack(alignment: .leading, spacing: 8) {
                     if entry.isPending {
                         HStack(spacing: 5) {
@@ -411,7 +476,7 @@ private struct SettingsView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(model.text("提醒间隔", "Check-in interval")).font(.system(size: 13, weight: .medium))
-                        Text(model.text("从点击开始时计时。修改后，下次开始记录时生效。", "Timed from when you start. Changes apply to your next session."))
+                        Text(model.text("从开始记录时计时。修改后，下次开始记录时生效。", "Timed from the start of a session. Changes apply to your next session."))
                             .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                     }
                     Spacer()
@@ -453,6 +518,14 @@ private struct SettingsView: View {
                 settingRow(title: model.text("提醒声音", "Reminder sound"), subtitle: model.text("弹窗出现时播放轻提示音", "A gentle sound when a check-in appears")) {
                     Toggle(model.text("提醒声音", "Reminder sound"), isOn: Binding(get: { model.preferences.playSound }, set: { value in change { $0.playSound = value } })).labelsHidden().toggleStyle(JournalToggleStyle())
                 }
+                Divider().overlay(Theme.line)
+                settingRow(title: model.text("应用使用线索", "App clues"), subtitle: model.text("记录前台应用与停留时间，随时段保存在本机，帮助回忆细节", "Keep foreground apps and time with each moment, locally, to help recall the details")) {
+                    Toggle(model.text("应用使用线索", "App clues"), isOn: Binding(get: { model.preferences.captureApplicationUsage != false }, set: { value in change { $0.captureApplicationUsage = value } })).labelsHidden().toggleStyle(JournalToggleStyle())
+                }
+                Divider().overlay(Theme.line)
+                settingRow(title: model.text("离开时自动暂停", "Pause when inactive"), subtitle: model.text("连续 30 分钟无键鼠操作时暂停，回来后可保留或跳过这段时间", "Pause after 30 minutes without input. Keep or skip the gap when you return")) {
+                    Toggle(model.text("离开时自动暂停", "Pause when inactive"), isOn: Binding(get: { model.preferences.pauseWhenInactive != false }, set: { value in change { $0.pauseWhenInactive = value } })).labelsHidden().toggleStyle(JournalToggleStyle())
+                }
             }
             .journalCard()
 
@@ -485,7 +558,11 @@ private struct SettingsView: View {
                     }
                 }
                 Divider().overlay(Theme.line)
-                settingRow(title: model.text("登录时启动", "Launch at login"), subtitle: model.text("启动后等待你手动开始记录", "Ready when you are. Recording always starts manually.")) {
+                settingRow(title: model.text("打开时开始记录", "Start recording on launch"), subtitle: model.text("打开应用就开始新时段，手动结束后不会自行重启", "Start a new session when the app launches. A manual stop stays stopped")) {
+                    Toggle(model.text("打开时开始记录", "Start recording on launch"), isOn: Binding(get: { model.preferences.autoStartRecording != false }, set: { value in change { $0.autoStartRecording = value } })).labelsHidden().toggleStyle(JournalToggleStyle())
+                }
+                Divider().overlay(Theme.line)
+                settingRow(title: model.text("登录时启动", "Launch at login"), subtitle: model.text("登录 Mac 时自动打开应用", "Open the app when you log in to your Mac")) {
                     Toggle(model.text("登录时启动", "Launch at login"), isOn: Binding(get: { model.launchAtLogin }, set: model.setLaunchAtLogin)).labelsHidden().toggleStyle(JournalToggleStyle())
                 }
             }
@@ -535,7 +612,7 @@ private struct SettingsView: View {
             HStack {
                 BrandMark(size: 22)
                 Text("JustNow").font(.system(size: 12, weight: .semibold, design: .rounded))
-                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.8")
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.9")
                     .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 Spacer()
                 Text(model.text("用 MIT 许可开源 · 为日常留一点空间", "Open source under MIT · A little room for your day"))
@@ -630,10 +707,10 @@ private struct OnboardingView: View {
                 }
                 Text(model.text("让忙碌的日子，\n留下几句话。", "Give your busy day\na few words."))
                     .font(.system(size: 36, weight: .semibold, design: .rounded)).lineSpacing(9)
-                Text(model.text("不用预先计划任务。只在你想记录时开始，\n定时回顾刚才，用自己的话写下来。", "No tasks to set up. Start when you want to,\nthen pause to capture what you just did."))
+                Text(model.text("不用预先计划任务。打开应用，开始记录，\n定时回顾刚才，用自己的话写下来。", "No tasks to set up. Open the app to begin,\nthen pause to capture what you just did."))
                     .font(.system(size: 13)).foregroundStyle(Theme.secondary).lineSpacing(7)
                 VStack(alignment: .leading, spacing: 16) {
-                    onboardingStep("play", title: model.text("由你手动开始", "Start on your terms"), detail: model.text("工作、学习，或任何想留意的时段", "Work, study, or any time you want to notice"))
+                    onboardingStep("play", title: model.text("打开就开始，随时可停", "Open to begin. Stop anytime"), detail: model.text("离开电脑时自动暂停，回来后再继续", "Pause when you're away. Continue when you return"))
                     onboardingStep("timer", title: model.text("每 30 分钟，轻轻提醒", "A check-in every 30 minutes"), detail: model.text("提醒间隔可以在设置中调整", "Choose your own interval in Settings"))
                     onboardingStep("text.alignleft", title: model.text("一句话，留住刚才", "A few words about just now"), detail: model.text("自由填写，之后也能补记和修改", "Write freely. Fill in or edit entries later"))
                 }
@@ -721,17 +798,25 @@ struct PromptView: View {
                 if let entry {
                     HStack(spacing: 8) {
                         Image(systemName: "clock").font(.system(size: 11))
-                        Text(timeLabel(entry.start) + " – " + timeLabel(entry.end))
+                        Text(timeRangeLabel(entry.start, entry.end))
                             .font(.system(size: 12, weight: .medium, design: .monospaced))
                     }
                     .foregroundStyle(Theme.secondary)
                 }
             }
+            if let summary = entry?.applicationUsage {
+                ApplicationRecallView(model: model, summary: summary)
+            }
             JournalTextEditor(text: $draft, placeholder: model.text("做了什么、想到什么……随意写下来。", "What you did, what crossed your mind… just write."), focused: $writing)
                 .frame(minHeight: 128, maxHeight: .infinity)
             HStack {
-                Text(model.text("不必写得完美，一句话也很好。", "A sentence is plenty."))
-                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, model.canDiscardPrompt(entryID) {
+                    Button { _ = model.discardPrompt(id: entryID) } label: {
+                        Text(model.text("不记录这段", "Skip this interval")).actionLabel(compact: true)
+                    }
+                    .buttonStyle(ActionButtonStyle(primary: false, compact: true))
+                    .disabled(model.hasStorageError)
+                }
                 Spacer()
                 Button { model.dismissPrompt() } label: { Text(model.text("稍后", "Later")).actionLabel(compact: true) }
                     .buttonStyle(ActionButtonStyle(primary: false, compact: true))
@@ -806,6 +891,13 @@ private struct EntryEditorView: View {
                 }
             }
             .padding(16).background(Theme.inset, in: RoundedRectangle(cornerRadius: 12))
+            if let summary = request.entry?.applicationUsage {
+                ApplicationRecallView(model: model, summary: summary, compact: true)
+                if abs(summary.start.timeIntervalSince(start)) > 1 || abs(summary.end.timeIntervalSince(end)) > 1 {
+                    Text(model.text("线索来自原时段 ", "Clues come from the original interval ") + timeLabel(summary.start) + " – " + timeLabel(summary.end))
+                        .font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                }
+            }
             JournalTextEditor(text: $draft, placeholder: model.text("这段时间，你做了什么？", "What did you do during this time?"), focused: $writing)
                 .frame(height: 180)
             if end <= start {
@@ -820,7 +912,9 @@ private struct EntryEditorView: View {
                         .buttonStyle(IconButtonStyle(compact: false)).help(model.text("删除记录", "Delete entry"))
                 }
                 Spacer()
-                Button { preserveDraft(); dismiss() } label: { Text(model.text("取消", "Cancel")).actionLabel() }
+                Button {
+                    if model.discardEditorDraft() { savedOrDeleted = true; dismiss() }
+                } label: { Text(model.text("取消", "Cancel")).actionLabel() }
                     .buttonStyle(ActionButtonStyle(primary: false))
                     .keyboardShortcut(.escape, modifiers: [])
                 Button {
@@ -840,7 +934,7 @@ private struct EntryEditorView: View {
         .onChange(of: draft) { _, _ in preserveDraft() }
         .onChange(of: start) { _, _ in preserveDraft() }
         .onChange(of: end) { _, _ in preserveDraft() }
-        .onDisappear { preserveDraft(); model.editorDraft = nil }
+        .onDisappear { preserveDraft() }
         .confirmationDialog(model.text("删除这段记录？", "Delete this entry?"), isPresented: $confirmDelete, titleVisibility: .visible) {
             Button(model.text("删除", "Delete"), role: .destructive) {
                 if let entry = request.entry {
@@ -864,6 +958,12 @@ private struct EntryEditorView: View {
 
 private func timeLabel(_ date: Date) -> String {
     date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).locale(Locale(identifier: "en_GB")))
+}
+
+private func timeRangeLabel(_ start: Date, _ end: Date) -> String {
+    if timeLabel(start) != timeLabel(end) { return timeLabel(start) + " – " + timeLabel(end) }
+    let style = Date.FormatStyle.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits).locale(Locale(identifier: "en_GB"))
+    return start.formatted(style) + " – " + end.formatted(style)
 }
 
 @MainActor private func dateLabel(_ date: Date, model: AppModel) -> String {

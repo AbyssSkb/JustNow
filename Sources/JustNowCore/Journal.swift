@@ -18,16 +18,18 @@ public struct JournalEntry: Identifiable, Codable, Equatable, Sendable {
     public var text: String
     public var status: EntryStatus
     public var createdAt: Date
+    public var applicationUsage: ApplicationUsageSummary?
     public var isPending: Bool { status == .pending }
     public var duration: TimeInterval { end.timeIntervalSince(start) }
 
-    public init(id: UUID = UUID(), start: Date, end: Date, text: String = "", status: EntryStatus = .pending, createdAt: Date = Date()) {
+    public init(id: UUID = UUID(), start: Date, end: Date, text: String = "", status: EntryStatus = .pending, createdAt: Date = Date(), applicationUsage: ApplicationUsageSummary? = nil) {
         self.id = id
         self.start = start
         self.end = end
         self.text = text
         self.status = status
         self.createdAt = createdAt
+        self.applicationUsage = applicationUsage
     }
 }
 
@@ -37,6 +39,9 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var appearance: AppAppearance = .system
     public var language: AppLanguage = .system
     public var completedOnboarding = false
+    public var captureApplicationUsage: Bool?
+    public var autoStartRecording: Bool?
+    public var pauseWhenInactive: Bool?
     public init() {}
 }
 
@@ -45,12 +50,14 @@ public struct RecordingSession: Codable, Equatable, Sendable {
     public var segmentStartedAt: Date
     public var lastHeartbeatAt: Date
     public var intervalMinutes: Int
+    public var applicationActivity: [ApplicationActivity]?
 
-    public init(startedAt: Date, segmentStartedAt: Date, lastHeartbeatAt: Date, intervalMinutes: Int) {
+    public init(startedAt: Date, segmentStartedAt: Date, lastHeartbeatAt: Date, intervalMinutes: Int, applicationActivity: [ApplicationActivity]? = nil) {
         self.startedAt = startedAt
         self.segmentStartedAt = segmentStartedAt
         self.lastHeartbeatAt = lastHeartbeatAt
         self.intervalMinutes = intervalMinutes
+        self.applicationActivity = applicationActivity
     }
 }
 
@@ -96,6 +103,7 @@ public enum JournalError: LocalizedError, Equatable {
     case activeSessionConflict
     case entryNotFound
     case noBackup
+    case invalidApplicationUsage
 
     public var errorDescription: String? {
         switch self {
@@ -108,6 +116,7 @@ public enum JournalError: LocalizedError, Equatable {
         case .activeSessionConflict: return "This time range overlaps the interval currently being recorded."
         case .entryNotFound: return "This entry no longer exists."
         case .noBackup: return "There is no saved backup to restore."
+        case .invalidApplicationUsage: return "The saved application usage has invalid times or durations."
         }
     }
 }
@@ -117,7 +126,9 @@ public struct JournalState: Codable, Equatable, Sendable {
     public var entries: [JournalEntry] = []
     public var preferences = Preferences()
     public var session: RecordingSession?
+    public var pauseDate: Date?
     public var updateContinuation: AppUpdateContinuation?
+    public var editorDraft: JournalEditorDraft?
     public var isRecording: Bool { session != nil }
     public init() {}
 
@@ -125,21 +136,66 @@ public struct JournalState: Codable, Equatable, Sendable {
     public mutating func start(at date: Date) -> Bool {
         guard session == nil, Self.isFinite(date), (1...240).contains(preferences.intervalMinutes),
               !entries.contains(where: { $0.end > date }) else { return false }
-        session = RecordingSession(startedAt: date, segmentStartedAt: date, lastHeartbeatAt: date, intervalMinutes: preferences.intervalMinutes)
+        session = RecordingSession(startedAt: date, segmentStartedAt: date, lastHeartbeatAt: date, intervalMinutes: preferences.intervalMinutes,
+                                   applicationActivity: preferences.captureApplicationUsage == false ? nil : [])
+        pauseDate = nil
         return true
     }
 
     @discardableResult
+    public mutating func pause(at date: Date) -> [UUID] {
+        guard pauseDate == nil, let current = session, Self.isFinite(date) else { return [] }
+        let ids = advance(to: max(date, current.lastHeartbeatAt))
+        pauseDate = session?.lastHeartbeatAt
+        return ids
+    }
+
+    @discardableResult
+    public mutating func resume(at date: Date, recordGap: Bool) -> [UUID] {
+        guard let boundary = pauseDate, session != nil, Self.isFinite(date), date >= boundary else { return [] }
+        if recordGap {
+            pauseDate = nil
+            return advance(to: date)
+        }
+        let ids = stop(at: boundary)
+        _ = start(at: date)
+        return ids
+    }
+
+    public mutating func appendApplicationActivity(_ spans: [ApplicationActivity]) {
+        guard pauseDate == nil, var current = session else { return }
+        var activity = current.applicationActivity ?? []
+        for span in spans.filter(\.isValid).sorted(by: { $0.start < $1.start }) {
+            let start = max(max(span.start, current.segmentStartedAt), activity.last?.end ?? current.segmentStartedAt)
+            guard start < span.end else { continue }
+            let clipped = ApplicationActivity(bundleIdentifier: span.bundleIdentifier, name: span.name, start: start, end: span.end)
+            if let last = activity.last, last.end == start, last.identity == clipped.identity {
+                activity[activity.count - 1].end = clipped.end
+            } else {
+                activity.append(clipped)
+            }
+            current.lastHeartbeatAt = max(current.lastHeartbeatAt, span.end)
+        }
+        if !activity.isEmpty { current.applicationActivity = activity }
+        session = current
+    }
+
+    @discardableResult
     public mutating func advance(to date: Date) -> [UUID] {
-        guard var current = session, Self.isFinite(date), (1...240).contains(current.intervalMinutes) else { return [] }
+        guard pauseDate == nil, var current = session, Self.isFinite(date), (1...240).contains(current.intervalMinutes) else { return [] }
         let interval = TimeInterval(current.intervalMinutes * 60)
         var ids: [UUID] = []
         while current.segmentStartedAt.addingTimeInterval(interval) <= date {
             let end = current.segmentStartedAt.addingTimeInterval(interval)
-            let entry = JournalEntry(start: current.segmentStartedAt, end: end, createdAt: date)
+            let usage = current.applicationActivity.map { ApplicationUsageSummary(start: current.segmentStartedAt, end: end, activity: $0) }
+            let entry = JournalEntry(start: current.segmentStartedAt, end: end, createdAt: date, applicationUsage: usage)
             entries.append(entry)
             ids.append(entry.id)
             current.segmentStartedAt = end
+            current.applicationActivity = current.applicationActivity?.compactMap { span in
+                guard span.end > end else { return nil }
+                return ApplicationActivity(bundleIdentifier: span.bundleIdentifier, name: span.name, start: max(span.start, end), end: span.end)
+            }
         }
         current.lastHeartbeatAt = max(current.lastHeartbeatAt, date)
         session = current
@@ -149,9 +205,12 @@ public struct JournalState: Codable, Equatable, Sendable {
     @discardableResult
     public mutating func stop(at date: Date) -> [UUID] {
         guard Self.isFinite(date), session != nil else { return [] }
-        var ids = advance(to: date)
-        if let current = session, date > current.segmentStartedAt {
-            let entry = JournalEntry(start: current.segmentStartedAt, end: date, createdAt: date)
+        let boundary = pauseDate ?? date
+        pauseDate = nil
+        var ids = advance(to: boundary)
+        if let current = session, boundary > current.segmentStartedAt {
+            let usage = current.applicationActivity.map { ApplicationUsageSummary(start: current.segmentStartedAt, end: boundary, activity: $0) }
+            let entry = JournalEntry(start: current.segmentStartedAt, end: boundary, createdAt: date, applicationUsage: usage)
             entries.append(entry)
             ids.append(entry.id)
         }
@@ -163,7 +222,7 @@ public struct JournalState: Codable, Equatable, Sendable {
     @discardableResult
     public mutating func recoverInterruptedSession() -> [UUID] {
         updateContinuation = nil
-        guard let heartbeat = session?.lastHeartbeatAt else { return [] }
+        guard pauseDate == nil, let heartbeat = session?.lastHeartbeatAt else { return [] }
         return stop(at: heartbeat)
     }
 
@@ -221,12 +280,26 @@ public struct JournalState: Codable, Equatable, Sendable {
             guard Self.isFinite(entry.start), Self.isFinite(entry.end), Self.isFinite(entry.createdAt), entry.start < entry.end else { throw JournalError.invalidDates }
             if entry.status == .recorded && entry.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { throw JournalError.emptyNote }
             if index > 0 && sorted[index - 1].end > entry.start { throw JournalError.overlappingEntries }
+            try entry.applicationUsage?.validate()
         }
         if let current = session {
             guard (1...240).contains(current.intervalMinutes) else { throw JournalError.invalidInterval }
             guard Self.isFinite(current.startedAt), Self.isFinite(current.segmentStartedAt), Self.isFinite(current.lastHeartbeatAt),
                   current.startedAt <= current.segmentStartedAt, current.segmentStartedAt <= current.lastHeartbeatAt else { throw JournalError.invalidDates }
             if entries.contains(where: { $0.end > current.segmentStartedAt }) { throw JournalError.activeSessionConflict }
+            var previousEnd = current.segmentStartedAt
+            for activity in current.applicationActivity ?? [] {
+                guard activity.isValid, activity.start >= previousEnd, activity.end <= current.lastHeartbeatAt
+                else { throw JournalError.invalidApplicationUsage }
+                previousEnd = activity.end
+            }
+        }
+        if let draft = editorDraft {
+            guard Self.isFinite(draft.start), Self.isFinite(draft.end) else { throw JournalError.invalidDates }
+        }
+        if let pauseDate {
+            guard let session, Self.isFinite(pauseDate), pauseDate >= session.segmentStartedAt,
+                  pauseDate == session.lastHeartbeatAt else { throw JournalError.invalidDates }
         }
     }
 

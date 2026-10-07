@@ -25,7 +25,7 @@ final class AppModelTests: XCTestCase {
             let entry = JournalEntry(start: date.addingTimeInterval(-1_800), end: date.addingTimeInterval(-900))
             state.entries = [entry]
             try storage.save(state)
-            let model = AppModel(dataDirectory: directory, appVersion: "0.1.8")
+            let model = AppModel(dataDirectory: directory, appVersion: "0.1.8", trackApplicationUsage: false)
             model.startRecording()
             let anchor = try XCTUnwrap(model.journal.session?.startedAt)
             model.openPendingEntry(entry.id)
@@ -35,7 +35,6 @@ final class AppModelTests: XCTestCase {
             model.editorDraft = editor
             XCTAssertTrue(model.prepareForUpdate(sourceVersion: "0.1.8", targetVersion: "0.1.9"))
             model.editorDraft = nil // The view can disappear before the final termination checkpoint.
-            model.handleSleep()
             XCTAssertTrue(model.isRecording)
             XCTAssertTrue(model.prepareForQuit())
             let checkpoint = try storage.load()
@@ -46,7 +45,7 @@ final class AppModelTests: XCTestCase {
             XCTAssertEqual(checkpoint.updateContinuation?.promptEntryID, entry.id)
             XCTAssertEqual(checkpoint.updateContinuation?.editorDraft, editor)
 
-            let resumed = AppModel(dataDirectory: directory, appVersion: "0.1.9")
+            let resumed = AppModel(dataDirectory: directory, appVersion: "0.1.9", trackApplicationUsage: false)
             XCTAssertTrue(resumed.isRecording)
             XCTAssertEqual(try XCTUnwrap(resumed.journal.session?.startedAt).timeIntervalSince1970, anchor.timeIntervalSince1970, accuracy: 0.000001)
             XCTAssertEqual(resumed.promptEntryID, entry.id)
@@ -54,7 +53,7 @@ final class AppModelTests: XCTestCase {
             XCTAssertEqual(resumed.entries.count, 1)
             XCTAssertNil(try storage.load().updateContinuation)
             XCTAssertTrue(resumed.prepareForQuit())
-            let normalLaunch = AppModel(dataDirectory: directory, appVersion: "0.1.9")
+            let normalLaunch = AppModel(dataDirectory: directory, appVersion: "0.1.9", trackApplicationUsage: false)
             XCTAssertFalse(normalLaunch.isRecording)
             XCTAssertNil(normalLaunch.promptEntryID)
         }
@@ -75,7 +74,7 @@ final class AppModelTests: XCTestCase {
             state.updateContinuation = AppUpdateContinuation(preparedAt: date.addingTimeInterval(-10), sourceVersion: "0.1.8", targetVersion: "0.1.9", promptEntryID: first.id, promptQueue: [second.id])
             let storage = JournalStorage(directory: directory)
             try storage.save(state)
-            let model = AppModel(dataDirectory: directory, appVersion: "0.1.9")
+            let model = AppModel(dataDirectory: directory, appVersion: "0.1.9", trackApplicationUsage: false)
             XCTAssertTrue(model.isRecording)
             XCTAssertEqual(model.journal.session?.startedAt, anchor)
             XCTAssertEqual(model.currentSegmentStart, anchor.addingTimeInterval(1_800))
@@ -92,7 +91,7 @@ final class AppModelTests: XCTestCase {
         }
     }
 
-    func testUpdateRestoresUnsavedNewAndExistingEditorsOnlyOnce() async throws {
+    func testUpdateConsumesContinuationAndKeepsNewAndExistingDraftsRecoverable() async throws {
         try await MainActor.run {
             for editingExisting in [false, true] {
                 let directory = FileManager.default.temporaryDirectory.appendingPathComponent("justnow-update-\(UUID())")
@@ -105,15 +104,16 @@ final class AppModelTests: XCTestCase {
                 state.updateContinuation = AppUpdateContinuation(preparedAt: date, sourceVersion: "0.1.8", targetVersion: "0.1.9", editorDraft: draft)
                 let storage = JournalStorage(directory: directory)
                 try storage.save(state)
-                let model = AppModel(dataDirectory: directory, appVersion: "0.1.9")
+                let model = AppModel(dataDirectory: directory, appVersion: "0.1.9", trackApplicationUsage: false)
                 XCTAssertFalse(model.isRecording)
                 XCTAssertEqual(model.editorDraft, draft)
                 XCTAssertEqual(model.presentedEditor?.draft, draft)
                 XCTAssertEqual(model.presentedEditor?.entry?.id, draft.entryID)
                 XCTAssertEqual(model.entries.first?.text, "Saved original")
                 XCTAssertNil(try storage.load().updateContinuation)
-                let repeated = AppModel(dataDirectory: directory, appVersion: "0.1.9")
-                XCTAssertNil(repeated.presentedEditor)
+                let repeated = AppModel(dataDirectory: directory, appVersion: "0.1.9", trackApplicationUsage: false)
+                XCTAssertEqual(repeated.presentedEditor?.draft, draft)
+                XCTAssertNil(repeated.journal.updateContinuation)
                 XCTAssertFalse(repeated.isRecording)
             }
         }
@@ -132,7 +132,7 @@ final class AppModelTests: XCTestCase {
                 state.updateContinuation = AppUpdateContinuation(preparedAt: preparedAt, sourceVersion: "0.1.8", targetVersion: "0.1.9")
                 let storage = JournalStorage(directory: directory)
                 try storage.save(state)
-                let model = AppModel(dataDirectory: directory, appVersion: appVersion)
+                let model = AppModel(dataDirectory: directory, appVersion: appVersion, trackApplicationUsage: false)
                 XCTAssertFalse(model.isRecording)
                 XCTAssertEqual(model.entries.count, 1)
                 XCTAssertEqual(model.entries.first?.end, heartbeat)
@@ -147,7 +147,7 @@ final class AppModelTests: XCTestCase {
         try await MainActor.run {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("justnow-update-\(UUID())")
             defer { try? FileManager.default.removeItem(at: directory) }
-            let model = AppModel(dataDirectory: directory, appVersion: "0.1.8")
+            let model = AppModel(dataDirectory: directory, appVersion: "0.1.8", trackApplicationUsage: false)
             model.startRecording()
             let storage = JournalStorage(directory: directory)
             let intact = try Data(contentsOf: storage.fileURL)
