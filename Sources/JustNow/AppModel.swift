@@ -58,7 +58,7 @@ final class AppModel: ObservableObject {
     private var updating = false
 
     init(isDemo: Bool = false, showOnboarding: Bool = false, dataDirectory: URL? = nil,
-         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.10",
+         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.11",
          trackApplicationUsage: Bool = true, applicationTracker: ApplicationUsageTracker? = nil,
          idleSeconds: @escaping () -> TimeInterval = {
              CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!)

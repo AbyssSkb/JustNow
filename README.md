@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Resources/AppIcon-preview.png" width="128" alt="JustNow macOS 图标：白色圆角底板上的紫色文档与时钟轮廓">
+  <img src="Resources/AppIcon-preview.png" width="128" alt="JustNow macOS 图标：白色圆角底板上的紫色纸页与角落时钟轮廓">
 </p>
 
 # JustNow · 刚才
@@ -150,9 +150,9 @@ DOWNLOAD_URL_PREFIX='https://github.com/OWNER/justnow/releases/download/v0.1.9/'
 
 ## 参与开发
 
-详见 [CONTRIBUTING.md](CONTRIBUTING.md)。macOS Dock 和 Finder 图标使用白色圆角底板上的紫色文档与时钟轮廓，源图是 `Resources/AppIcon-macOS-source.png`，编辑提示词是 `Resources/AppIcon-macOS-prompt.txt`。
+详见 [CONTRIBUTING.md](CONTRIBUTING.md)。macOS Dock 和 Finder 图标使用白色圆角底板上的紫色纸页与角落时钟轮廓，源图是 `Resources/AppIcon-macOS-source.png`，编辑提示词是 `Resources/AppIcon-macOS-prompt.txt`。
 
-应用内使用透明紫色轮廓标识，源图仍是 `Resources/AppIcon-source.png`，提示词是 `Resources/AppIcon-outline-prompt.txt`；`Resources/AppIcon-prompt.txt` 保留为设计历史。
+应用内使用同一纸页与角落时钟的透明紫色轮廓标识，源图是 `Resources/AppIcon-source.png`，提示词是 `Resources/AppIcon-outline-prompt.txt`；`Resources/AppIcon-prompt.txt` 保留为设计历史。
 
 `scripts/generate-icon.swift` 使用原生 AppKit 从这两张 PNG 缩放生成 macOS ICNS、预览图和透明品牌资源。运行以下命令可重现图标资源，无需下载素材或安装第三方包：
 
