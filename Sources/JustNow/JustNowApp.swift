@@ -65,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         updates = UpdateController(enabled: !model.isDemo)
         updates.onBeforeRelaunch = { [weak self] targetVersion in
             guard let self else { return false }
-            let sourceVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.15"
+            let sourceVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0.1.16"
             return self.model.prepareForUpdate(sourceVersion: sourceVersion, targetVersion: targetVersion)
         }
         updates.onCancel = { [weak self] in _ = self?.model.cancelPreparedUpdate() }
@@ -272,7 +272,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "JustNow · 刚才",
-            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.15",
+            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.16",
             .credits: NSAttributedString(string: model.text("一句话，留下刚才。\n免费开源 · MIT", "A small pause. A clearer day.\nFree & open source · MIT"))
         ])
     }

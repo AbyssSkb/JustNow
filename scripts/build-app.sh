@@ -2,10 +2,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.1.15}"
+VERSION="${VERSION:-0.1.16}"
 DIST="$ROOT/dist"
 APP="$DIST/JustNow.app"
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
+export UPDATE_FEED_URL="${UPDATE_FEED_URL-https://github.com/AbyssSkb/JustNow/releases/latest/download/appcast.xml}"
+if [[ ! ${UPDATE_PUBLIC_ED_KEY+x} ]]; then
+  UPDATE_PUBLIC_ED_KEY="$(cat "$ROOT/Resources/UpdateSigningPublicKey.txt")"
+fi
+export UPDATE_PUBLIC_ED_KEY
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   printf 'VERSION must be a numeric semantic version, such as 0.1.8.\n' >&2
@@ -93,6 +98,8 @@ info = {
 if os.environ.get("UPDATE_FEED_URL"):
     info["SUFeedURL"] = os.environ["UPDATE_FEED_URL"]
     info["SUPublicEDKey"] = os.environ["UPDATE_PUBLIC_ED_KEY"]
+    info["SURequireSignedFeed"] = True
+    info["SUVerifyUpdateBeforeExtraction"] = True
 with open(sys.argv[1], "wb") as file:
     plistlib.dump(info, file)
 PY

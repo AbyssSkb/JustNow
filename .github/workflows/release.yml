@@ -1,0 +1,234 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Existing tag version, for example 0.1.16 (without v)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: justnow-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'AbyssSkb/JustNow'
+    runs-on: macos-15
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Validate version and refuse existing releases
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, re, subprocess
+          version = os.environ['INPUT_VERSION'] if os.environ['EVENT_NAME'] == 'workflow_dispatch' else os.environ['REF_NAME'].removeprefix('v')
+          if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version):
+              raise SystemExit('Version must be X.Y.Z with three numeric components and no leading zeros.')
+          if os.environ['EVENT_NAME'] != 'workflow_dispatch' and os.environ['REF_NAME'] != 'v' + version:
+              raise SystemExit('Release tag must be vX.Y.Z.')
+          try:
+              valid_key = len(base64.b64decode(os.environ['SPARKLE_PRIVATE_KEY'].strip(), validate=True)) in (32, 96)
+          except ValueError:
+              valid_key = False
+          if not valid_key:
+              raise SystemExit('SPARKLE_PRIVATE_KEY is required and must be an exported Sparkle Ed25519 key.')
+          def api(path):
+              result = subprocess.run(['gh', 'api', path], text=True, capture_output=True)
+              if result.returncode:
+                  if '(HTTP 404)' in result.stderr:
+                      return None
+                  raise SystemExit('GitHub release lookup failed; refusing to publish.')
+              return json.loads(result.stdout)
+          repo = os.environ['GH_REPO']
+          tag = 'v' + version
+          if api(f'repos/{repo}/releases/tags/{tag}') is not None:
+              raise SystemExit('A release already exists for this tag (including drafts); refusing to replace it.')
+          latest = api(f'repos/{repo}/releases/latest')
+          previous = ''
+          if latest:
+              previous = latest['tag_name']
+              if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', previous):
+                  raise SystemExit('Latest release has an unexpected tag; review it before publishing.')
+              if tuple(map(int, version.split('.'))) <= tuple(map(int, previous[1:].split('.'))):
+                  raise SystemExit('Version must be higher than the current latest release.')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={version}\ntag={tag}\nprevious_tag={previous}\n')
+          PY
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ steps.version.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select Xcode and require Swift 6.2
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_26.3.app
+          swift --version | tee "$RUNNER_TEMP/swift-version.txt"
+          grep -Eq 'Swift version 6\.2([. ]|$)' "$RUNNER_TEMP/swift-version.txt"
+      - name: Test tagged source
+        run: |
+          swift test
+          python3 scripts/check-editor-wrapping.py
+          python3 scripts/check-update-signing.py
+          bash -n scripts/build-app.sh scripts/package-app.sh scripts/notarize.sh scripts/generate-update-feed.sh
+      - name: Configure optional Apple signing
+        env:
+          CERTIFICATE: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY_INPUT: ${{ vars.DEVELOPER_ID_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -z "$CERTIFICATE" ]]; then
+            if [[ -n "$CERTIFICATE_PASSWORD$SIGNING_IDENTITY_INPUT$APPLE_ID$APPLE_TEAM_ID$APPLE_APP_SPECIFIC_PASSWORD" ]]; then
+              printf 'Partial Apple signing configuration; provide the certificate or remove the optional Apple configuration.\n' >&2
+              exit 1
+            fi
+            printf 'SIGNING_STATUS=Ad-hoc signed; not Apple notarized.\n' >> "$GITHUB_ENV"
+            printf 'Apple credentials are absent; release will be ad-hoc signed and not notarized.\n'
+            exit 0
+          fi
+          if [[ -z "$CERTIFICATE_PASSWORD" ]]; then
+            printf 'DEVELOPER_ID_CERTIFICATE_PASSWORD is required with the certificate.\n' >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import base64, os
+          try:
+              certificate = base64.b64decode(os.environ['CERTIFICATE'], validate=True)
+          except ValueError:
+              raise SystemExit('Developer ID certificate is not valid base64.')
+          with open(os.path.join(os.environ['RUNNER_TEMP'], 'justnow-signing.p12'), 'wb') as file:
+              file.write(certificate)
+          PY
+          keychain="$RUNNER_TEMP/justnow-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 32)"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/justnow-signing.p12" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          rm -f "$RUNNER_TEMP/justnow-signing.p12"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          identity="$(python3 - "$keychain" <<'PY'
+          import os, re, subprocess, sys
+          identities = re.findall(r'"(Developer ID Application:[^"]+)"', subprocess.check_output(['security', 'find-identity', '-v', '-p', 'codesigning', sys.argv[1]], text=True))
+          requested = os.environ['SIGNING_IDENTITY_INPUT']
+          if requested:
+              if requested not in identities:
+                  raise SystemExit('Configured Developer ID identity is not in the imported certificate.')
+              print(requested)
+          elif len(identities) == 1:
+              print(identities[0])
+          else:
+              raise SystemExit('Expected one Developer ID identity; set DEVELOPER_ID_SIGNING_IDENTITY when necessary.')
+          PY
+          )"
+          printf 'SIGNING_IDENTITY=%s\n' "$identity" >> "$GITHUB_ENV"
+          printf 'SIGNING_STATUS=Developer ID signed; not Apple notarized.\n' >> "$GITHUB_ENV"
+          if [[ -n "$APPLE_ID$APPLE_TEAM_ID$APPLE_APP_SPECIFIC_PASSWORD" ]]; then
+            if [[ -z "$APPLE_ID" || -z "$APPLE_TEAM_ID" || -z "$APPLE_APP_SPECIFIC_PASSWORD" ]]; then
+              printf 'Provide all three Apple notarization secrets together.\n' >&2
+              exit 1
+            fi
+            xcrun notarytool store-credentials justnow-ci --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD"
+            printf 'NOTARY_PROFILE=justnow-ci\n' >> "$GITHUB_ENV"
+          fi
+      - name: Build universal app
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: ./scripts/build-app.sh
+      - name: Notarize when credentials are configured
+        if: env.NOTARY_PROFILE != ''
+        run: |
+          ./scripts/notarize.sh
+          printf 'SIGNING_STATUS=Developer ID signed and Apple notarized; App and DMG are stapled.\n' >> "$GITHUB_ENV"
+      - name: Check built-in update configuration
+        run: |
+          python3 - <<'PY'
+          import pathlib, plistlib
+          info = plistlib.loads(pathlib.Path('dist/JustNow.app/Contents/Info.plist').read_bytes())
+          assert info['SUFeedURL'] == 'https://github.com/AbyssSkb/JustNow/releases/latest/download/appcast.xml'
+          assert info['SUPublicEDKey'] == pathlib.Path('Resources/UpdateSigningPublicKey.txt').read_text().strip()
+          assert info['SURequireSignedFeed'] and info['SUVerifyUpdateBeforeExtraction']
+          PY
+          codesign --verify --deep --strict dist/JustNow.app
+          lipo dist/JustNow.app/Contents/MacOS/JustNow -verify_arch arm64 x86_64
+          python3 scripts/check-single-instance.py dist/JustNow.app/Contents/MacOS/JustNow
+      - name: Prepare release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+          version = os.environ['VERSION']
+          changelog = pathlib.Path('CHANGELOG.md').read_text()
+          section = re.search(r'^## ' + re.escape(version) + r'\s*\n(.*?)(?=^## |\Z)', changelog, re.M | re.S)
+          if section is None:
+              raise SystemExit('Add release notes for this version to CHANGELOG.md before tagging.')
+          notes = section.group(1).strip() + '\n\nSigning status: ' + os.environ['SIGNING_STATUS'] + '\n'
+          pathlib.Path('release-notes.md').write_text(notes)
+          updates = pathlib.Path('dist/update-feed')
+          updates.mkdir(parents=True, exist_ok=True)
+          (updates / f'JustNow-{version}-universal.md').write_text(notes)
+          PY
+      - name: Recover previous signed feed
+        if: steps.version.outputs.previous_tag != ''
+        env:
+          PREVIOUS_TAG: ${{ steps.version.outputs.previous_tag }}
+        run: |
+          mkdir -p dist/update-feed
+          gh release download "$PREVIOUS_TAG" --pattern appcast.xml --dir dist/update-feed
+      - name: Sign and verify archive and appcast
+        env:
+          DOWNLOAD_URL_PREFIX: https://github.com/AbyssSkb/JustNow/releases/download/${{ steps.version.outputs.tag }}/
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: ./scripts/generate-update-feed.sh
+      - name: Prepare checksums
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, os, pathlib
+          version = os.environ['VERSION']
+          dist = pathlib.Path('dist')
+          files = [dist / f'update-feed/JustNow-{version}-universal.zip', dist / f'JustNow-{version}-universal.dmg', dist / 'update-feed/appcast.xml']
+          (dist / f'JustNow-{version}-SHA256.txt').write_text(''.join(f'{hashlib.sha256(file.read_bytes()).hexdigest()}  {file.name}\n' for file in files))
+          PY
+      - name: Create draft, verify uploaded bytes, then publish
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          assets=("dist/update-feed/JustNow-$VERSION-universal.zip" "dist/JustNow-$VERSION-universal.dmg" "dist/JustNow-$VERSION-SHA256.txt" dist/update-feed/appcast.xml)
+          gh release create "$RELEASE_TAG" "${assets[@]}" --draft --verify-tag --title "JustNow $RELEASE_TAG" --notes-file release-notes.md
+          uploaded="$(mktemp -d "$RUNNER_TEMP/justnow-uploaded.XXXXXX")"
+          gh release download "$RELEASE_TAG" --dir "$uploaded"
+          for asset in "${assets[@]}"; do
+            cmp "$asset" "$uploaded/$(basename "$asset")"
+          done
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+      - name: Clean temporary Apple credentials
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/justnow-signing.p12"
+          if [[ -f "$RUNNER_TEMP/justnow-signing.keychain-db" ]]; then
+            security delete-keychain "$RUNNER_TEMP/justnow-signing.keychain-db"
+          fi

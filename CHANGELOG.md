@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.16
+
+- Add English and Chinese READMEs with native macOS screenshots of the English interface.
+- Connect in-app updates to signed GitHub Releases for `AbyssSkb/JustNow`.
+- Add GitHub Actions CI and universal macOS release packaging with signed Sparkle appcasts.
+
 ## 0.1.15
 
 - 修正自动聚焦的滚动动画连带首次弹窗布局变化，导致编辑界面局部先显示白色、标题和背景延迟归位的问题。

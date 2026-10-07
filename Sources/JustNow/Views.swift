@@ -631,7 +631,7 @@ private struct SettingsView: View {
             HStack {
                 BrandMark(size: 22)
                 Text("JustNow").font(.system(size: 12, weight: .semibold, design: .rounded))
-                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.15")
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.16")
                     .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 Spacer()
                 Text(model.text("MIT 开源", "Open source under MIT"))
